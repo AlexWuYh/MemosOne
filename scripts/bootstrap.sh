@@ -15,6 +15,7 @@ if [[ ! -d android && ! -d macos && ! -d windows ]]; then
 fi
 
 flutter pub get
+dart run build_runner build --delete-conflicting-outputs
 flutter analyze
 flutter test
 echo "Bootstrap OK."

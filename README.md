@@ -32,18 +32,17 @@ Early scaffold (Milestone **M0**). Architecture and process docs live under [`.a
 ## Quick start
 
 ```bash
-# Requires Flutter 3.x / Dart 3.5+
+# Requires Flutter 3.x (this repo developed on Flutter 3.44 / Dart 3.12)
+export PATH="$HOME/development/flutter/bin:$PATH"   # if needed
+
 flutter pub get
+dart run build_runner build --delete-conflicting-outputs
+flutter analyze
 flutter test
-flutter run -d macos   # or windows / android
+flutter run -d macos   # or windows / chrome / android
 ```
 
-If platform folders are missing after clone:
-
-```bash
-flutter create . --project-name memos_one --platforms=windows,macos,android
-flutter pub get
-```
+Helper: `./scripts/bootstrap.sh`
 
 ## Development mode
 
