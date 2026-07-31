@@ -1,61 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Root application widget.
-///
-/// Keep this thin: theme, routing, and global providers only.
-/// No database or HTTP access from UI layers — see `.ai/standards/`.
-class MemosOneApp extends StatelessWidget {
+import '../core/constants/app_constants.dart';
+import '../core/theme/app_theme.dart';
+import '../feature/home/presentation/home_shell.dart';
+import 'providers.dart';
+
+class MemosOneApp extends ConsumerWidget {
   const MemosOneApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeModeProvider);
+    final accent = ref.watch(accentColorProvider);
+
     return MaterialApp(
-      title: 'Memos One',
+      title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF4F46E5),
-          brightness: Brightness.light,
-        ),
-        useMaterial3: true,
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF4F46E5),
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-      ),
-      themeMode: ThemeMode.system,
-      home: const _BootstrapHome(),
-    );
-  }
-}
-
-class _BootstrapHome extends StatelessWidget {
-  const _BootstrapHome();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Memos One')),
-      body: const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'One Client. Every Device. Your Memos.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-            ),
-            SizedBox(height: 12),
-            Text(
-              'Scaffold ready. See .ai/ for architecture & tasks.',
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
+      theme: AppTheme.light(accent),
+      darkTheme: AppTheme.dark(accent),
+      themeMode: themeMode,
+      home: const HomeShell(),
     );
   }
 }
