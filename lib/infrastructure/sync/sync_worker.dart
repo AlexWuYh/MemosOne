@@ -11,26 +11,27 @@ import '../../domain/entities/workspace.dart';
 import '../../domain/repositories/sync_service.dart';
 import '../database/app_database.dart';
 import '../network/memos/memos_api_client.dart';
-import '../repositories/memo_repository_impl.dart';
 import '../storage/secure_token_store.dart';
 import 'conflict_resolver.dart';
+import 'sync_memo_gateway.dart';
 import 'sync_queue.dart';
 
 class SyncWorker implements SyncService {
   SyncWorker({
     required AppDatabase db,
     required SecureTokenStore tokens,
-    required MemoRepositoryImpl memos,
+    required SyncMemoGateway memos,
     Connectivity? connectivity,
+    SyncQueue? queue,
   })  : _db = db,
         _tokens = tokens,
         _memos = memos,
-        _queue = SyncQueue(db),
+        _queue = queue ?? SyncQueue(db),
         _connectivity = connectivity ?? Connectivity();
 
   final AppDatabase _db;
   final SecureTokenStore _tokens;
-  final MemoRepositoryImpl _memos;
+  final SyncMemoGateway _memos;
   final SyncQueue _queue;
   final Connectivity _connectivity;
   final ConflictResolver _conflicts = ConflictResolver();
@@ -96,7 +97,7 @@ class SyncWorker implements SyncService {
 
   @override
   Future<void> pullOnly(Workspace workspace) async {
-    await _pull(workspace);
+    await _pull(workspace, reconcileDeletes: true);
   }
 
   @override
@@ -107,6 +108,34 @@ class SyncWorker implements SyncService {
   @override
   Future<void> retryDeadTask(String taskId) {
     return _queue.retryDead(taskId);
+  }
+
+  /// Exposed for tests: whether a full pull should run.
+  Future<bool> shouldFullPull(
+    String workspaceId, {
+    required bool forcePull,
+    DateTime? now,
+  }) async {
+    if (forcePull) return true;
+    final ws = await (_db.select(_db.workspaces)
+          ..where((t) => t.localId.equals(workspaceId)))
+        .getSingleOrNull();
+    if (ws == null) return false;
+    if (!ws.initialSyncCompleted) return true;
+
+    final cursor = await (_db.select(_db.syncCursors)
+          ..where(
+            (t) =>
+                t.workspaceId.equals(workspaceId) &
+                t.key.equals('memo_pull'),
+          ))
+        .getSingleOrNull();
+    if (cursor == null) return true;
+    final last = DateTime.tryParse(cursor.value);
+    if (last == null) return true;
+    final clock = now ?? DateTime.now();
+    return clock.difference(last) >=
+        const Duration(minutes: AppConstants.fullPullIntervalMinutes);
   }
 
   Future<void> _cycle(Workspace workspace, {bool forcePull = false}) async {
@@ -140,23 +169,32 @@ class SyncWorker implements SyncService {
     );
 
     try {
-      // Push drain
       while (true) {
         final task = await _queue.nextPending(workspace.localId);
         if (task == null) break;
         await _pushOne(workspace, task);
       }
-      // Pull
-      if (forcePull || true) {
-        await _pull(workspace);
+
+      final doPull = await shouldFullPull(
+        workspace.localId,
+        forcePull: forcePull,
+      );
+      if (doPull) {
+        await _pull(workspace, reconcileDeletes: true);
       }
+
+      final dead = await _queue.countDead(workspace.localId);
+      final pending = await _queue.countPending(workspace.localId);
       await _emit(
         workspace.localId,
         _snapshot(workspace.localId).copyWith(
-          state: GlobalSyncState.idle,
+          state: dead > 0 && pending == 0
+              ? GlobalSyncState.error
+              : GlobalSyncState.idle,
           lastPushAt: DateTime.now(),
-          lastPullAt: DateTime.now(),
-          clearError: true,
+          lastPullAt: doPull ? DateTime.now() : _snapshot(workspace.localId).lastPullAt,
+          lastError: dead > 0 ? 'Dead sync tasks: $dead' : null,
+          clearError: dead == 0,
         ),
       );
     } on AuthFailure catch (e) {
@@ -204,7 +242,6 @@ class SyncWorker implements SyncService {
             return;
           }
           if (memo.serverName != null) {
-            // already bound — treat as update
             final remote = await client.updateMemo(
               name: memo.serverName!,
               content: memo.content,
@@ -295,7 +332,10 @@ class SyncWorker implements SyncService {
     }
   }
 
-  Future<void> _pull(Workspace workspace) async {
+  Future<void> _pull(
+    Workspace workspace, {
+    required bool reconcileDeletes,
+  }) async {
     final client = await _client(workspace);
     String? pageToken;
     final seen = <String>{};
@@ -334,7 +374,6 @@ class SyncWorker implements SyncService {
             remoteUpdatedAt: remote.updateTime,
           );
           if (winner == ConflictWinner.local) {
-            // keep local; push will handle
             continue;
           }
           await _memos.applyRemoteOverwriteWithHistory(
@@ -362,7 +401,10 @@ class SyncWorker implements SyncService {
       if (pageToken != null && pageToken.isEmpty) pageToken = null;
     } while (pageToken != null);
 
-    // Mark initial sync
+    if (reconcileDeletes) {
+      await _reconcileRemoteDeletes(workspace.localId, seen);
+    }
+
     await (_db.update(_db.workspaces)
           ..where((t) => t.localId.equals(workspace.localId)))
         .write(
@@ -383,6 +425,26 @@ class SyncWorker implements SyncService {
         );
 
     _authBlocked.remove(workspace.localId);
+  }
+
+  /// Local rows bound to server names missing from full remote list.
+  Future<void> _reconcileRemoteDeletes(
+    String workspaceId,
+    Set<String> seenRemoteNames,
+  ) async {
+    final bound = await _memos.listServerBound(workspaceId);
+    for (final local in bound) {
+      final name = local.serverName;
+      if (name == null || name.isEmpty) continue;
+      if (seenRemoteNames.contains(name)) continue;
+
+      if (local.dirty) {
+        // Spec: re-create on server rather than drop local edits.
+        await _memos.prepareRecreateAfterRemoteDelete(local.localId);
+      } else {
+        await _memos.hardDeleteLocal(local.localId);
+      }
+    }
   }
 
   void clearAuthBlock(String workspaceId) => _authBlocked.remove(workspaceId);

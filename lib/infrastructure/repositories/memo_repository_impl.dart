@@ -13,9 +13,10 @@ import '../../domain/entities/workspace.dart';
 import '../../domain/repositories/memo_repository.dart';
 import '../database/app_database.dart';
 import '../database/mappers.dart';
+import '../sync/sync_memo_gateway.dart';
 import '../sync/sync_queue.dart';
 
-class MemoRepositoryImpl implements MemoRepository {
+class MemoRepositoryImpl implements MemoRepository, SyncMemoGateway {
   MemoRepositoryImpl(this._db, this._queue, {this.workspaceTypeResolver});
 
   final AppDatabase _db;
@@ -23,6 +24,11 @@ class MemoRepositoryImpl implements MemoRepository {
   final Future<WorkspaceType> Function(String workspaceId)?
       workspaceTypeResolver;
   final _uuid = const Uuid();
+
+  String _contentHash(String content) {
+    // Stable, non-crypto fingerprint for idempotency diagnostics (A-6 aid).
+    return content.hashCode.toUnsigned(32).toRadixString(16);
+  }
 
   Future<bool> _shouldSync(String workspaceId) async {
     if (workspaceTypeResolver != null) {
@@ -211,6 +217,7 @@ class MemoRepositoryImpl implements MemoRepository {
             ),
             dirty: Value(sync),
             version: const Value(1),
+            contentHash: Value(_contentHash(input.content)),
           ),
         );
     await _rebuildTags(
@@ -261,6 +268,7 @@ class MemoRepositoryImpl implements MemoRepository {
           sync ? MemoSyncStatus.dirty.name : current.syncStatus.name,
         ),
         lastError: const Value(null),
+        contentHash: Value(_contentHash(nextContent)),
       ),
     );
     await _rebuildTags(
@@ -289,20 +297,13 @@ class MemoRepositoryImpl implements MemoRepository {
   Future<void> softDelete(String localId) async {
     final current = await _loadMemo(localId);
     final sync = await _shouldSync(current.workspaceId);
+    // Never pushed (or local-only): drop row and cancel any pending queue work.
     if (!sync || current.serverName == null) {
-      await (_db.delete(_db.memoTags)
-            ..where((t) => t.memoLocalId.equals(localId)))
-          .go();
-      await (_db.delete(_db.memos)..where((t) => t.localId.equals(localId)))
-          .go();
-      await _deleteFts(localId);
-      if (sync) {
-        await _queue.enqueueMemo(
-          workspaceId: current.workspaceId,
-          entityLocalId: localId,
-          action: SyncAction.delete,
-        );
-      }
+      await _queue.cancelAllForEntity(
+        workspaceId: current.workspaceId,
+        entityLocalId: localId,
+      );
+      await hardDeleteLocal(localId);
       return;
     }
     await (_db.update(_db.memos)..where((t) => t.localId.equals(localId)))
@@ -478,6 +479,7 @@ class MemoRepositoryImpl implements MemoRepository {
   }
 
   /// Apply remote memo during pull (used by SyncWorker).
+  @override
   Future<void> upsertFromRemote({
     required String workspaceId,
     required String serverName,
@@ -561,6 +563,7 @@ class MemoRepositoryImpl implements MemoRepository {
     );
   }
 
+  @override
   Future<void> bindServerName(String localId, String serverName) async {
     await (_db.update(_db.memos)..where((t) => t.localId.equals(localId)))
         .write(
@@ -574,6 +577,7 @@ class MemoRepositoryImpl implements MemoRepository {
     );
   }
 
+  @override
   Future<void> markCleanAfterPush(
     String localId, {
     DateTime? updatedAtServer,
@@ -589,6 +593,7 @@ class MemoRepositoryImpl implements MemoRepository {
     );
   }
 
+  @override
   Future<void> markSyncing(String localId) async {
     await (_db.update(_db.memos)..where((t) => t.localId.equals(localId)))
         .write(
@@ -596,6 +601,7 @@ class MemoRepositoryImpl implements MemoRepository {
     );
   }
 
+  @override
   Future<void> markError(String localId, String error) async {
     await (_db.update(_db.memos)..where((t) => t.localId.equals(localId)))
         .write(
@@ -606,6 +612,7 @@ class MemoRepositoryImpl implements MemoRepository {
     );
   }
 
+  @override
   Future<void> hardDeleteLocal(String localId) async {
     await (_db.delete(_db.memoTags)
           ..where((t) => t.memoLocalId.equals(localId)))
@@ -614,6 +621,45 @@ class MemoRepositoryImpl implements MemoRepository {
     await _deleteFts(localId);
   }
 
+  @override
+  Future<List<Memo>> listServerBound(String workspaceId) async {
+    final rows = await (_db.select(_db.memos)
+          ..where(
+            (t) =>
+                t.workspaceId.equals(workspaceId) &
+                t.serverName.isNotNull() &
+                t.deletedAt.isNull(),
+          ))
+        .get();
+    final result = <Memo>[];
+    for (final row in rows) {
+      result.add(memoFromRow(row, tags: await _tagsForMemo(row.localId)));
+    }
+    return result;
+  }
+
+  @override
+  Future<void> prepareRecreateAfterRemoteDelete(String localId) async {
+    await (_db.update(_db.memos)..where((t) => t.localId.equals(localId)))
+        .write(
+      MemosCompanion(
+        serverName: const Value(null),
+        dirty: const Value(true),
+        syncStatus: Value(MemoSyncStatus.dirty.name),
+        updatedAtLocal: Value(DateTime.now()),
+        updatedAtServer: const Value(null),
+      ),
+    );
+    final memo = await getByLocalId(localId);
+    if (memo == null) return;
+    await _queue.enqueueMemo(
+      workspaceId: memo.workspaceId,
+      entityLocalId: localId,
+      action: SyncAction.create,
+    );
+  }
+
+  @override
   Future<void> applyRemoteOverwriteWithHistory({
     required String localId,
     required String content,

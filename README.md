@@ -28,6 +28,8 @@ Early scaffold (Milestone **M0**). Architecture and process docs live under [`.a
 - Drift (SQLite)  
 - Dio  
 - flutter_secure_storage  
+- `flutter_markdown` for V1 preview (package is discontinued upstream — plan migration to `flutter_markdown_plus` or super_editor post-hardening)  
+
 
 ## Quick start
 

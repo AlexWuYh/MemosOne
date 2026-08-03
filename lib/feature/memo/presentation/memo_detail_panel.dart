@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -19,45 +21,115 @@ class MemoDetailPanel extends ConsumerStatefulWidget {
 class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
   final _controller = TextEditingController();
   String? _boundId;
+  String _boundContent = '';
   bool _preview = false;
   bool _saving = false;
+  Timer? _autosaveTimer;
+  ProviderSubscription<Memo?>? _memoSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _memoSub = ref.listenManual<Memo?>(selectedMemoProvider, (prev, next) {
+      _onMemoChanged(next);
+    });
+    // Initial bind after first frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _onMemoChanged(ref.read(selectedMemoProvider));
+    });
+  }
 
   @override
   void dispose() {
+    _autosaveTimer?.cancel();
+    _memoSub?.close();
     _controller.dispose();
     super.dispose();
   }
 
-  void _bind(Memo? memo) {
+  void _onMemoChanged(Memo? memo) {
+    _autosaveTimer?.cancel();
     if (memo == null) {
       _boundId = null;
-      _controller.clear();
+      _boundContent = '';
+      if (_controller.text.isNotEmpty) {
+        _controller.clear();
+      }
+      if (mounted) setState(() {});
       return;
     }
-    if (_boundId == memo.localId && _controller.text == memo.content) return;
+    if (_boundId == memo.localId && _controller.text == memo.content) {
+      _boundContent = memo.content;
+      return;
+    }
+    // Switching away: try flush previous draft once.
+    final previousId = _boundId;
+    final previousBound = _boundContent;
+    final draft = _controller.text;
+    if (previousId != null &&
+        previousId != memo.localId &&
+        draft != previousBound &&
+        draft.isNotEmpty) {
+      unawaited(_saveById(previousId, draft, expectedContent: previousBound));
+    }
     _boundId = memo.localId;
-    _controller.text = memo.content;
+    _boundContent = memo.content;
+    _controller.value = TextEditingValue(
+      text: memo.content,
+      selection: TextSelection.collapsed(offset: memo.content.length),
+    );
+    if (mounted) setState(() {});
   }
 
-  Future<void> _save(Memo memo) async {
-    if (_saving) return;
-    final content = _controller.text;
-    if (content == memo.content) return;
+  Future<void> _saveById(
+    String localId,
+    String content, {
+    required String expectedContent,
+  }) async {
+    if (content == expectedContent) return;
+    // Abort if selection moved to another memo mid-flight after schedule.
+    if (_boundId != null && _boundId != localId) {
+      // still allow saving the previous id intentionally
+    }
     setState(() => _saving = true);
     try {
       await ref.read(memoRepositoryProvider).update(
-            memo.localId,
+            localId,
             MemoPatch(content: content),
           );
+      if (_boundId == localId) {
+        _boundContent = content;
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
 
+  void _scheduleAutosave(Memo memo) {
+    _autosaveTimer?.cancel();
+    final localId = memo.localId;
+    final expected = _boundContent;
+    _autosaveTimer = Timer(
+      const Duration(milliseconds: AppConstants.autosaveDebounceMs),
+      () {
+        if (!mounted) return;
+        // Only save if still editing this memo.
+        if (_boundId != localId) return;
+        final content = _controller.text;
+        if (content == expected || content == memo.content) return;
+        unawaited(
+          _saveById(localId, content, expectedContent: expected),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final memo = ref.watch(selectedMemoProvider);
-    _bind(memo);
+    final workspace = ref.watch(activeWorkspaceProvider);
+    final allowAttach = workspace == null || workspace.isLocal;
 
     if (memo == null) {
       return Center(
@@ -98,6 +170,37 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                   ),
+                PopupMenuButton<MemoVisibility>(
+                  tooltip: 'Visibility',
+                  initialValue: memo.visibility,
+                  onSelected: (v) {
+                    ref.read(memoRepositoryProvider).update(
+                          memo.localId,
+                          MemoPatch(visibility: v),
+                        );
+                  },
+                  itemBuilder: (ctx) => [
+                    for (final v in MemoVisibility.values)
+                      PopupMenuItem(
+                        value: v,
+                        child: Text(v.name.toUpperCase()),
+                      ),
+                  ],
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.public, size: 18),
+                        const SizedBox(width: 4),
+                        Text(
+                          memo.visibility.name.toUpperCase(),
+                          style: Theme.of(context).textTheme.labelMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 IconButton(
                   tooltip: _preview ? 'Edit' : 'Preview',
                   icon: Icon(_preview ? Icons.edit : Icons.visibility),
@@ -121,11 +224,12 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
                       .read(memoRepositoryProvider)
                       .archive(memo.localId, !memo.archived),
                 ),
-                IconButton(
-                  tooltip: 'Attach file',
-                  icon: const Icon(Icons.attach_file),
-                  onPressed: () => _attach(memo),
-                ),
+                if (allowAttach)
+                  IconButton(
+                    tooltip: 'Attach file (local workspace)',
+                    icon: const Icon(Icons.attach_file),
+                    onPressed: () => _attach(memo),
+                  ),
                 IconButton(
                   tooltip: 'History',
                   icon: const Icon(Icons.history),
@@ -155,6 +259,7 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
                       ),
                     );
                     if (ok == true) {
+                      _autosaveTimer?.cancel();
                       await ref
                           .read(memoRepositoryProvider)
                           .softDelete(memo.localId);
@@ -186,15 +291,7 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
                     contentPadding: EdgeInsets.all(16),
                     hintText: 'Write in Markdown… #tags supported',
                   ),
-                  onChanged: (_) {
-                    // autosave debounce via post-frame delayed save
-                    Future<void>.delayed(const Duration(milliseconds: 400), () {
-                      if (!mounted) return;
-                      if (_controller.text != memo.content) {
-                        _save(memo);
-                      }
-                    });
-                  },
+                  onChanged: (_) => _scheduleAutosave(memo),
                 ),
         ),
         if (memo.tags.isNotEmpty)

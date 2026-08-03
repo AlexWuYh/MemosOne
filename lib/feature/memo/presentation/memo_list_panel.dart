@@ -1,11 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../app/providers.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../domain/entities/memo.dart';
 
-class MemoListPanel extends ConsumerWidget {
+/// Focus node for Ctrl/Cmd+F from [HomeShell].
+final searchFocusNodeProvider = Provider<FocusNode>((ref) {
+  final node = FocusNode(debugLabel: 'memoSearch');
+  ref.onDispose(node.dispose);
+  return node;
+});
+
+class MemoListPanel extends ConsumerStatefulWidget {
   const MemoListPanel({
     super.key,
     this.onSelect,
@@ -16,32 +26,74 @@ class MemoListPanel extends ConsumerWidget {
   final bool compact;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MemoListPanel> createState() => _MemoListPanelState();
+}
+
+class _MemoListPanelState extends ConsumerState<MemoListPanel> {
+  final _searchController = TextEditingController();
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.text = ref.read(searchQueryProvider);
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(
+      const Duration(milliseconds: AppConstants.searchDebounceMs),
+      () {
+        if (!mounted) return;
+        ref.read(searchQueryProvider.notifier).state = value;
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final memosAsync = ref.watch(memosProvider);
     final selectedId = ref.watch(selectedMemoIdProvider);
     final search = ref.watch(searchQueryProvider);
     final filter = ref.watch(memoFilterProvider);
+    final searchFocus = ref.watch(searchFocusNodeProvider);
+
+    // Keep field in sync when cleared externally.
+    if (search.isEmpty && _searchController.text.isNotEmpty) {
+      _searchController.clear();
+    }
 
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
           child: TextField(
+            focusNode: searchFocus,
+            controller: _searchController,
             decoration: InputDecoration(
               hintText: 'Search memos…',
               prefixIcon: const Icon(Icons.search),
-              suffixIcon: search.isEmpty
+              suffixIcon: search.isEmpty && _searchController.text.isEmpty
                   ? null
                   : IconButton(
                       icon: const Icon(Icons.clear),
-                      onPressed: () =>
-                          ref.read(searchQueryProvider.notifier).state = '',
+                      onPressed: () {
+                        _debounce?.cancel();
+                        _searchController.clear();
+                        ref.read(searchQueryProvider.notifier).state = '';
+                      },
                     ),
               border: const OutlineInputBorder(),
               isDense: true,
             ),
-            onChanged: (v) =>
-                ref.read(searchQueryProvider.notifier).state = v,
+            onChanged: _onSearchChanged,
           ),
         ),
         SingleChildScrollView(
@@ -112,7 +164,7 @@ class MemoListPanel extends ConsumerWidget {
                     ),
                     title: Text(
                       memo.snippet,
-                      maxLines: compact ? 2 : 3,
+                      maxLines: widget.compact ? 2 : 3,
                       overflow: TextOverflow.ellipsis,
                     ),
                     subtitle: Text(
@@ -127,7 +179,7 @@ class MemoListPanel extends ConsumerWidget {
                     onTap: () {
                       ref.read(selectedMemoIdProvider.notifier).state =
                           memo.localId;
-                      onSelect?.call(memo);
+                      widget.onSelect?.call(memo);
                     },
                   );
                 },

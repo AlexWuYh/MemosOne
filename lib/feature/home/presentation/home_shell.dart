@@ -21,6 +21,17 @@ class HomeShell extends ConsumerWidget {
     ref.read(selectedMemoIdProvider.notifier).state = memo.localId;
   }
 
+  void _openWorkspaces(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const SizedBox(
+        height: 480,
+        child: WorkspaceRail(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final width = MediaQuery.sizeOf(context).width;
@@ -28,6 +39,7 @@ class HomeShell extends ConsumerWidget {
     final isMedium = width >= 600 && width < 900;
     final selectedId = ref.watch(selectedMemoIdProvider);
     final active = ref.watch(activeWorkspaceProvider);
+    final sync = ref.watch(syncStatusProvider).valueOrNull;
 
     return CallbackShortcuts(
       bindings: {
@@ -35,6 +47,12 @@ class HomeShell extends ConsumerWidget {
             _newMemo(ref),
         const SingleActivator(LogicalKeyboardKey.keyN, control: true): () =>
             _newMemo(ref),
+        const SingleActivator(LogicalKeyboardKey.keyF, meta: true): () {
+          ref.read(searchFocusNodeProvider).requestFocus();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true): () {
+          ref.read(searchFocusNodeProvider).requestFocus();
+        },
         const SingleActivator(LogicalKeyboardKey.keyS, meta: true): () {
           final ws = ref.read(activeWorkspaceProvider);
           if (ws != null && ws.isMemos) {
@@ -53,7 +71,26 @@ class HomeShell extends ConsumerWidget {
         child: Scaffold(
           appBar: AppBar(
             title: Text(active?.name ?? 'Memos One'),
+            leading: (!isWide && active != null)
+                ? IconButton(
+                    tooltip: 'Workspaces',
+                    icon: const Icon(Icons.workspaces_outlined),
+                    onPressed: () => _openWorkspaces(context),
+                  )
+                : null,
             actions: [
+              if (active?.isMemos == true && sync != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Center(
+                    child: Text(
+                      sync.lastPullAt == null
+                          ? 'Never synced'
+                          : 'Last sync ${_formatAgo(sync.lastPullAt!)}',
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                  ),
+                ),
               IconButton(
                 tooltip: 'New memo',
                 onPressed: active == null ? null : () => _newMemo(ref),
@@ -80,14 +117,40 @@ class HomeShell extends ConsumerWidget {
                       ],
                     )
                   : isMedium
-                      ? const Row(
+                      ? Row(
                           children: [
                             SizedBox(
+                              width: 72,
+                              child: Material(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerLowest,
+                                child: Column(
+                                  children: [
+                                    const SizedBox(height: 8),
+                                    IconButton(
+                                      tooltip: 'Workspaces',
+                                      icon: const Icon(Icons.workspaces),
+                                      onPressed: () => _openWorkspaces(context),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Search',
+                                      icon: const Icon(Icons.search),
+                                      onPressed: () => ref
+                                          .read(searchFocusNodeProvider)
+                                          .requestFocus(),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const VerticalDivider(width: 1),
+                            const SizedBox(
                               width: 280,
                               child: MemoListPanel(compact: true),
                             ),
-                            VerticalDivider(width: 1),
-                            Expanded(child: MemoDetailPanel()),
+                            const VerticalDivider(width: 1),
+                            const Expanded(child: MemoDetailPanel()),
                           ],
                         )
                       : selectedId == null
@@ -101,16 +164,7 @@ class HomeShell extends ConsumerWidget {
                                 ListTile(
                                   leading: const Icon(Icons.workspaces),
                                   title: const Text('Workspaces & settings'),
-                                  onTap: () {
-                                    showModalBottomSheet<void>(
-                                      context: context,
-                                      isScrollControlled: true,
-                                      builder: (_) => const SizedBox(
-                                        height: 480,
-                                        child: WorkspaceRail(),
-                                      ),
-                                    );
-                                  },
+                                  onTap: () => _openWorkspaces(context),
                                 ),
                               ],
                             )
@@ -119,6 +173,14 @@ class HomeShell extends ConsumerWidget {
       ),
     );
   }
+}
+
+String _formatAgo(DateTime t) {
+  final d = DateTime.now().difference(t);
+  if (d.inSeconds < 60) return 'just now';
+  if (d.inMinutes < 60) return '${d.inMinutes}m ago';
+  if (d.inHours < 24) return '${d.inHours}h ago';
+  return '${d.inDays}d ago';
 }
 
 class _EmptyOnboarding extends ConsumerWidget {

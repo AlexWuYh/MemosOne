@@ -212,6 +212,26 @@ class SyncQueue {
     );
   }
 
+  /// Drop all unfinished tasks for an entity (e.g. never-synced local delete).
+  Future<void> cancelAllForEntity({
+    required String workspaceId,
+    required String entityLocalId,
+  }) async {
+    await (_db.delete(_db.syncTasks)
+          ..where(
+            (t) =>
+                t.workspaceId.equals(workspaceId) &
+                t.entityLocalId.equals(entityLocalId) &
+                t.status.isIn([
+                  SyncTaskStatus.pending.name,
+                  SyncTaskStatus.failed.name,
+                  SyncTaskStatus.running.name,
+                  SyncTaskStatus.dead.name,
+                ]),
+          ))
+        .go();
+  }
+
   static Duration backoff(int retryCount) {
     const delays = [
       Duration(seconds: 2),

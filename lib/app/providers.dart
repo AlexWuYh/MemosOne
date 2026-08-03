@@ -67,6 +67,7 @@ final syncWorkerProvider = Provider<SyncWorker>((ref) {
   final worker = SyncWorker(
     db: ref.watch(appDatabaseProvider),
     tokens: ref.watch(secureTokenStoreProvider),
+    // MemoRepositoryImpl implements SyncMemoGateway (sync port).
     memos: ref.watch(memoRepositoryImplProvider),
   );
   ref.onDispose(worker.dispose);

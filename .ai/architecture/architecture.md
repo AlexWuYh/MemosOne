@@ -44,15 +44,16 @@ Unified abstraction: **Workspace** = isolated data plane.
 
 | Type | Persistence | Sync |
 | ---- | ----------- | ---- |
-| `local` | Per-workspace SQLite | None |
-| `memos` | Per-workspace SQLite | Sync Engine ↔ Memos API v1 |
+| `local` | Shared app SQLite, scoped by `workspaceId` | None |
+| `memos` | Shared app SQLite, scoped by `workspaceId` | Sync Engine ↔ Memos API v1 |
 | `cloud` | Reserved | Storage Adapter (Git/WebDAV/S3) — **not V1** |
 
 Rules:
 
 - One active workspace at a time in UI (multi-workspace list supported)
-- Each workspace has its own DB file path
+- **V1 persistence:** single Drift DB (`memos_one.sqlite`) with logical isolation — see [ADR 0004](../decisions/0004-single-db-multi-workspace.md). `databasePath` on Workspace is reserved, not multi-file SoT.
 - Credentials never live in the business DB (secure storage only)
+- Full pull + remote-delete reconcile on schedule / Sync now; push drains every poll
 
 ---
 

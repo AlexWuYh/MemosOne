@@ -158,18 +158,37 @@ class _SyncBadge extends ConsumerWidget {
           Theme.of(context).colorScheme.primary
         ),
     };
+    final last = s.lastPullAt;
+    final lastLine = last == null
+        ? 'Last full pull: never'
+        : 'Last full pull: ${_ago(last)}';
+    final deadLine =
+        s.deadCount > 0 ? ' · ${s.deadCount} dead' : '';
     return Card(
       child: ListTile(
         dense: true,
         leading: Icon(icon, color: color),
         title: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
+        subtitle: Text(
+          '$lastLine$deadLine',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
         trailing: IconButton(
-          tooltip: 'Sync now',
+          tooltip: 'Sync now (full pull)',
           icon: const Icon(Icons.refresh),
           onPressed: () =>
               ref.read(syncServiceProvider).syncNow(workspace),
         ),
       ),
     );
+  }
+
+  String _ago(DateTime t) {
+    final d = DateTime.now().difference(t);
+    if (d.inSeconds < 60) return 'just now';
+    if (d.inMinutes < 60) return '${d.inMinutes}m ago';
+    if (d.inHours < 24) return '${d.inHours}h ago';
+    return '${d.inDays}d ago';
   }
 }

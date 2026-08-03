@@ -193,12 +193,12 @@ class MemosApiClient {
             final token = data['accessToken'] as String? ??
                 data['token'] as String? ??
                 data['access_token'] as String?;
-            if (token != null && token.isNotEmpty) return token;
-          }
-          // Cookie session fallback: some instances set cookie only.
-          final setCookie = res.headers['set-cookie'];
-          if (setCookie != null && setCookie.isNotEmpty) {
-            return setCookie.join(';');
+            // Only accept explicit access tokens — never store Set-Cookie as Bearer.
+            if (token != null &&
+                token.isNotEmpty &&
+                !token.toLowerCase().startsWith('memos_session=')) {
+              return token;
+            }
           }
         } on DioException catch (e) {
           last = e;
@@ -206,7 +206,8 @@ class MemosApiClient {
         }
       }
       throw AuthFailure(
-        'Login failed',
+        'Login failed: no access token in response. '
+        'Cookie-only sessions are not supported; use API token auth.',
         cause: last,
       );
     } on DioException catch (e) {

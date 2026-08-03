@@ -13,3 +13,4 @@
 | 0001 | Offline First, local source of truth | Accepted |
 | 0002 | Flutter + Drift + Riverpod stack | Accepted |
 | 0003 | V1 MVP scope boundaries | Accepted |
+| 0004 | Single SQLite + workspaceId isolation | Accepted |
