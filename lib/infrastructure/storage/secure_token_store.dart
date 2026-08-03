@@ -1,14 +1,19 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/utils/app_logger.dart';
 
-/// Token storage with Keychain primary + SharedPreferences fallback.
+/// Token storage.
 ///
-/// On macOS sandbox, Keychain requires `keychain-access-groups` entitlement.
-/// If Keychain returns -34018 (missing entitlement) or other platform errors,
-/// we fall back to SharedPreferences so login still works for local desktop use.
+/// - **macOS (desktop)**: uses SharedPreferences only. Sandboxed ad-hoc builds
+///   cannot use Keychain without a development signing certificate
+///   (`errSecMissingEntitlement` -34018).
+/// - **iOS/Android**: prefers Keychain/Keystore via [FlutterSecureStorage],
+///   with SharedPreferences fallback.
 class SecureTokenStore {
   SecureTokenStore({
     FlutterSecureStorage? storage,
@@ -16,19 +21,16 @@ class SecureTokenStore {
   })  : _storage = storage ??
             const FlutterSecureStorage(
               aOptions: AndroidOptions(encryptedSharedPreferences: true),
-              mOptions: MacOsOptions(
-                accessibility: KeychainAccessibility.first_unlock,
-                synchronizable: false,
-              ),
-              iOptions: IOSOptions(
-                accessibility: KeychainAccessibility.first_unlock,
-              ),
             ),
-        _prefs = prefs;
+        _prefs = prefs,
+        _useKeychain = !kIsWeb && !Platform.isMacOS && !Platform.isLinux && !Platform.isWindows;
 
   final FlutterSecureStorage _storage;
   SharedPreferences? _prefs;
-  bool _preferPrefs = false;
+
+  /// Desktop builds skip Keychain (entitlement/signing friction).
+  final bool _useKeychain;
+  bool _keychainBroken = false;
 
   String _key(String workspaceId) => 'workspace.$workspaceId.accessToken';
 
@@ -38,22 +40,15 @@ class SecureTokenStore {
 
   Future<void> write(String workspaceId, String token) async {
     final key = _key(workspaceId);
-    if (!_preferPrefs) {
+    if (_useKeychain && !_keychainBroken) {
       try {
         await _storage.write(key: key, value: token);
-        // Mirror into prefs as backup for migration / reinstall edge cases.
-        final prefs = await _ensurePrefs();
-        await prefs.setString(key, token);
-        return;
       } on PlatformException catch (e) {
-        appLogger.w(
-          'Keychain write failed (${e.code}): ${e.message}. '
-          'Falling back to SharedPreferences.',
-        );
-        _preferPrefs = true;
+        appLogger.w('Keychain write failed (${e.code}): ${e.message}');
+        _keychainBroken = true;
       } catch (e) {
-        appLogger.w('Secure storage write failed: $e. Using prefs fallback.');
-        _preferPrefs = true;
+        appLogger.w('Secure storage write failed: $e');
+        _keychainBroken = true;
       }
     }
     final prefs = await _ensurePrefs();
@@ -62,15 +57,15 @@ class SecureTokenStore {
 
   Future<String?> read(String workspaceId) async {
     final key = _key(workspaceId);
-    if (!_preferPrefs) {
+    if (_useKeychain && !_keychainBroken) {
       try {
         final v = await _storage.read(key: key);
         if (v != null && v.isNotEmpty) return v;
       } on PlatformException catch (e) {
         appLogger.w('Keychain read failed (${e.code}): ${e.message}');
-        _preferPrefs = true;
+        _keychainBroken = true;
       } catch (_) {
-        _preferPrefs = true;
+        _keychainBroken = true;
       }
     }
     final prefs = await _ensurePrefs();
@@ -79,10 +74,10 @@ class SecureTokenStore {
 
   Future<void> delete(String workspaceId) async {
     final key = _key(workspaceId);
-    try {
-      await _storage.delete(key: key);
-    } catch (_) {
-      // ignore
+    if (_useKeychain) {
+      try {
+        await _storage.delete(key: key);
+      } catch (_) {}
     }
     final prefs = await _ensurePrefs();
     await prefs.remove(key);
