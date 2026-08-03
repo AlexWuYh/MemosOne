@@ -165,14 +165,12 @@ class MemosApiClient {
             'password': password,
           },
         }),
-        // snake_case variant some gateways emit
         MapEntry('/api/v1/auth/signin', {
           'password_credentials': {
             'username': username,
             'password': password,
           },
         }),
-        // Legacy flat body (older deployments)
         MapEntry('/api/v1/auth/signin', {
           'username': username,
           'password': password,
@@ -181,42 +179,84 @@ class MemosApiClient {
           'username': username,
           'password': password,
         }),
+        // Very old memos REST
+        MapEntry('/api/v1/auth/status', {
+          'username': username,
+          'password': password,
+        }),
       ];
 
       DioException? lastNetwork;
       Object? lastBody;
       int? lastStatus;
+      String? lastTransportHint;
 
       for (final attempt in attempts) {
         try {
           final res = await _dio.post<dynamic>(
             attempt.key,
             data: attempt.value,
+            options: Options(
+              headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+              },
+              responseType: ResponseType.json,
+              followRedirects: true,
+              validateStatus: (s) => s != null && s < 500,
+            ),
           );
           lastStatus = res.statusCode;
           lastBody = res.data;
+          appLogger.i(
+            'SignIn ${attempt.key} -> ${res.statusCode} '
+            'bodyType=${res.data.runtimeType}',
+          );
           if (res.statusCode != null &&
               res.statusCode! >= 200 &&
               res.statusCode! < 300) {
             final parsed = _parseSignInBody(res.data);
             if (parsed != null) return parsed;
+            // 2xx but no token — log keys for diagnostics
+            if (res.data is Map) {
+              appLogger.w(
+                'SignIn 2xx without token, keys=${(res.data as Map).keys.toList()}',
+              );
+            }
           }
-          // 4xx with message → stop early on auth errors for primary shape
           if (res.statusCode == 401 || res.statusCode == 403) {
-            throw AuthFailure(_extractErrorMessage(res.data) ?? 'Unauthorized');
+            throw AuthFailure(
+              _extractErrorMessage(res.data) ??
+                  '用户名或密码错误 / 密码登录未启用',
+            );
           }
         } on DioException catch (e) {
           lastNetwork = e;
           lastStatus = e.response?.statusCode;
           lastBody = e.response?.data;
-          if (e.response?.statusCode == 404) continue;
-          if (e.response?.statusCode == 400 ||
-              e.response?.statusCode == 401 ||
-              e.response?.statusCode == 403) {
-            // try next body shape for 400 (wrong field mask)
-            if (e.response?.statusCode == 400) continue;
+          lastTransportHint = _transportHint(e);
+          appLogger.w(
+            'SignIn DioException type=${e.type} status=${e.response?.statusCode} '
+            'msg=${e.message}',
+          );
+          if (e.type == DioExceptionType.connectionError ||
+              e.type == DioExceptionType.connectionTimeout ||
+              e.type == DioExceptionType.unknown && e.response == null) {
+            // Network blocked (e.g. missing macOS network.client entitlement)
+            // — no point trying alternate bodies.
             throw AuthFailure(
-              _extractErrorMessage(e.response?.data) ?? 'Login failed',
+              '无法连接 Memos 服务器（${e.type.name}）。'
+              '请确认：1) 地址可访问 2) 本机网络权限已开启 '
+              '(macOS 需 com.apple.security.network.client)。'
+              '${e.message != null ? ' 详情: ${e.message}' : ''}',
+              cause: e,
+            );
+          }
+          if (e.response?.statusCode == 404) continue;
+          if (e.response?.statusCode == 400) continue;
+          if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
+            throw AuthFailure(
+              _extractErrorMessage(e.response?.data) ?? '登录被拒绝',
               cause: e,
             );
           }
@@ -224,9 +264,10 @@ class MemosApiClient {
       }
 
       throw AuthFailure(
-        'Login failed (HTTP ${lastStatus ?? '?'}): '
-        '${_extractErrorMessage(lastBody) ?? 'no access token in response'}. '
-        'Ensure server is Memos API v1 and password auth is enabled.',
+        '登录失败 (HTTP ${lastStatus ?? '无响应'}): '
+        '${_extractErrorMessage(lastBody) ?? '响应中没有 accessToken'}。'
+        '${lastTransportHint != null ? ' $lastTransportHint' : ''} '
+        '也可在设置中用「Access Token」登录（Memos → Settings → Create Access Token）。',
         cause: lastNetwork,
       );
     } on AuthFailure {
@@ -236,10 +277,32 @@ class MemosApiClient {
     }
   }
 
+  String? _transportHint(DioException e) {
+    if (e.response == null) {
+      return '（请求未到达服务器，多为网络/证书/沙盒权限问题）';
+    }
+    return null;
+  }
+
   MemosSignInResult? _parseSignInBody(Object? data) {
+    if (data is String && data.trim().isNotEmpty) {
+      // Some gateways return raw JWT string
+      final t = data.trim();
+      if (t.startsWith('eyJ') || t.startsWith('memos_')) {
+        return MemosSignInResult(accessToken: t);
+      }
+      return null;
+    }
     if (data is! Map) return null;
     final map = Map<String, dynamic>.from(data);
-    final token = (map['accessToken'] ??
+    // Nested wrappers used by some proxies
+    final nested = map['data'] is Map
+        ? Map<String, dynamic>.from(map['data'] as Map)
+        : map;
+    final token = (nested['accessToken'] ??
+            nested['access_token'] ??
+            nested['token'] ??
+            map['accessToken'] ??
             map['access_token'] ??
             map['token'])
         ?.toString();

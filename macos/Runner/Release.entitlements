@@ -4,5 +4,13 @@
 <dict>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
+	<!-- Required for HTTPS API calls (Memos server) -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- Required for flutter_secure_storage / Keychain (errSecMissingEntitlement -34018) -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)$(CFBundleIdentifier)</string>
+	</array>
 </dict>
 </plist>
