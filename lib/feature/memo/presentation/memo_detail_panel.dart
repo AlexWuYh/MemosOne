@@ -2,11 +2,14 @@ import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app/providers.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../domain/entities/memo.dart';
 
 class MemoDetailPanel extends ConsumerStatefulWidget {
@@ -83,7 +86,6 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
       text: memo.content,
       selection: TextSelection.collapsed(offset: memo.content.length),
     );
-    // New empty memo starts in edit mode; existing content shows markdown.
     if (mounted) {
       setState(() => _preview = memo.content.trim().isNotEmpty);
     }
@@ -105,9 +107,7 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
             localId,
             MemoPatch(content: content),
           );
-      if (_boundId == localId) {
-        _boundContent = content;
-      }
+      if (_boundId == localId) _boundContent = content;
       if (enterPreview && mounted && _boundId == localId) {
         setState(() => _preview = true);
       }
@@ -118,15 +118,13 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
 
   void _scheduleAutosave(Memo memo) {
     _autosaveTimer?.cancel();
-    // Typing → leave preview so user sees raw markdown while editing.
     if (_preview) setState(() => _preview = false);
     final localId = memo.localId;
     final expected = _boundContent;
     _autosaveTimer = Timer(
       const Duration(milliseconds: AppConstants.autosaveDebounceMs),
       () {
-        if (!mounted) return;
-        if (_boundId != localId) return;
+        if (!mounted || _boundId != localId) return;
         final content = _controller.text;
         if (content == expected) return;
         unawaited(
@@ -134,7 +132,6 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
             localId,
             content,
             expectedContent: expected,
-            enterPreview: true,
           ),
         );
       },
@@ -147,254 +144,6 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
       memo.localId,
       _controller.text,
       expectedContent: _boundContent,
-      enterPreview: true,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final memo = ref.watch(selectedMemoProvider);
-    final workspace = ref.watch(activeWorkspaceProvider);
-    final allowAttach = workspace == null || workspace.isLocal;
-    final scheme = Theme.of(context).colorScheme;
-
-    if (memo == null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.article_outlined, size: 48, color: scheme.outline),
-            const SizedBox(height: 12),
-            Text(
-              '选择或新建一条笔记',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
-          child: Row(
-            children: [
-              if (widget.showBack)
-                IconButton(
-                  icon: const Icon(Icons.arrow_back_rounded),
-                  onPressed: () =>
-                      ref.read(selectedMemoIdProvider.notifier).state = null,
-                ),
-              SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(
-                    value: false,
-                    label: Text('编辑'),
-                    icon: Icon(Icons.edit_outlined, size: 16),
-                  ),
-                  ButtonSegment(
-                    value: true,
-                    label: Text('预览'),
-                    icon: Icon(Icons.visibility_outlined, size: 16),
-                  ),
-                ],
-                selected: {_preview},
-                onSelectionChanged: (s) async {
-                  if (s.first) {
-                    await _manualSave(memo);
-                  } else {
-                    setState(() => _preview = false);
-                  }
-                },
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (_saving)
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else
-                Text(
-                  memo.dirty ? '已保存 · 待同步' : '已保存',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                ),
-              const Spacer(),
-              PopupMenuButton<MemoVisibility>(
-                tooltip: '可见性',
-                initialValue: memo.visibility,
-                onSelected: (v) {
-                  ref.read(memoRepositoryProvider).update(
-                        memo.localId,
-                        MemoPatch(visibility: v),
-                      );
-                },
-                itemBuilder: (ctx) => [
-                  for (final v in MemoVisibility.values)
-                    PopupMenuItem(
-                      value: v,
-                      child: Text(v.name.toUpperCase()),
-                    ),
-                ],
-                child: Chip(
-                  visualDensity: VisualDensity.compact,
-                  avatar: const Icon(Icons.public, size: 16),
-                  label: Text(memo.visibility.name.toUpperCase()),
-                ),
-              ),
-              IconButton(
-                tooltip: memo.pinned ? '取消置顶' : '置顶',
-                icon: Icon(
-                  memo.pinned
-                      ? Icons.push_pin_rounded
-                      : Icons.push_pin_outlined,
-                ),
-                onPressed: () => ref
-                    .read(memoRepositoryProvider)
-                    .pin(memo.localId, !memo.pinned),
-              ),
-              IconButton(
-                tooltip: memo.archived ? '取消归档' : '归档',
-                icon: Icon(
-                  memo.archived
-                      ? Icons.unarchive_outlined
-                      : Icons.archive_outlined,
-                ),
-                onPressed: () => ref
-                    .read(memoRepositoryProvider)
-                    .archive(memo.localId, !memo.archived),
-              ),
-              if (allowAttach)
-                IconButton(
-                  tooltip: '附件（仅本地工作区）',
-                  icon: const Icon(Icons.attach_file_rounded),
-                  onPressed: () => _attach(memo),
-                ),
-              IconButton(
-                tooltip: '历史版本',
-                icon: const Icon(Icons.history_rounded),
-                onPressed: () => _showHistory(memo),
-              ),
-              IconButton(
-                tooltip: '删除',
-                icon: const Icon(Icons.delete_outline_rounded),
-                onPressed: () async {
-                  final ok = await showDialog<bool>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('删除笔记？'),
-                      content: const Text('将从本地删除，并在联网后同步到服务器。'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, false),
-                          child: const Text('取消'),
-                        ),
-                        FilledButton(
-                          onPressed: () => Navigator.pop(ctx, true),
-                          child: const Text('删除'),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (ok == true) {
-                    _autosaveTimer?.cancel();
-                    await ref
-                        .read(memoRepositoryProvider)
-                        .softDelete(memo.localId);
-                    ref.read(selectedMemoIdProvider.notifier).state = null;
-                  }
-                },
-              ),
-            ],
-          ),
-        ),
-        Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.5)),
-        Expanded(
-          child: _preview
-              ? Markdown(
-                  controller: _scrollController,
-                  data: _controller.text.isEmpty
-                      ? '*空笔记 — 切换到编辑开始书写*'
-                      : _controller.text,
-                  selectable: true,
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
-                      .copyWith(
-                    p: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          height: 1.55,
-                        ),
-                    h1: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                    h2: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                    blockquoteDecoration: BoxDecoration(
-                      color: scheme.surfaceContainerHighest
-                          .withValues(alpha: 0.45),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border(
-                        left: BorderSide(color: scheme.primary, width: 3),
-                      ),
-                    ),
-                  ),
-                  )
-              : TextField(
-                  controller: _controller,
-                  maxLines: null,
-                  expands: true,
-                  textAlignVertical: TextAlignVertical.top,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        height: 1.55,
-                        fontFamily: 'Menlo',
-                        fontFamilyFallback: const [
-                          'Monaco',
-                          'Consolas',
-                          'monospace',
-                        ],
-                        fontSize: 14.5,
-                      ),
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    filled: false,
-                    contentPadding: EdgeInsets.fromLTRB(20, 16, 20, 24),
-                    hintText: '用 Markdown 书写… 支持 #标签\n停顿后自动保存并渲染预览',
-                  ),
-                  onChanged: (_) => _scheduleAutosave(memo),
-                ),
-        ),
-        if (memo.tags.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: memo.tags
-                  .map(
-                    (String t) => ActionChip(
-                      label: Text('#$t'),
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () {
-                        ref.read(memoFilterProvider.notifier).state =
-                            MemoQuery(tag: t);
-                        ref.read(searchQueryProvider.notifier).state = '';
-                      },
-                    ),
-                  )
-                  .toList(),
-            ),
-          ),
-      ],
     );
   }
 
@@ -478,6 +227,345 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
           },
         );
       },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final memo = ref.watch(selectedMemoProvider);
+    final workspace = ref.watch(activeWorkspaceProvider);
+    final allowAttach = workspace == null || workspace.isLocal;
+    final scheme = Theme.of(context).colorScheme;
+
+    if (memo == null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.article_outlined, size: 48, color: scheme.outline),
+            const SizedBox(height: 12),
+            Text(
+              '选择或新建一条笔记',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final publicUrl = memo.visibility == MemoVisibility.public &&
+            workspace != null &&
+            workspace.isMemos &&
+            workspace.serverBaseUrl != null
+        ? memosPublicUrl(workspace.serverBaseUrl!, memo.serverName)
+        : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+          child: Row(
+            children: [
+              if (widget.showBack)
+                IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  onPressed: () =>
+                      ref.read(selectedMemoIdProvider.notifier).state = null,
+                ),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(
+                    value: false,
+                    label: Text('编辑'),
+                    icon: Icon(Icons.edit_outlined, size: 16),
+                  ),
+                  ButtonSegment(
+                    value: true,
+                    label: Text('预览'),
+                    icon: Icon(Icons.visibility_outlined, size: 16),
+                  ),
+                ],
+                selected: {_preview},
+                onSelectionChanged: (s) async {
+                  if (s.first) {
+                    await _manualSave(memo);
+                  } else {
+                    setState(() => _preview = false);
+                  }
+                },
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (_saving)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Text(
+                  memo.dirty ? '已保存 · 待同步' : '已保存',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                ),
+              const Spacer(),
+              PopupMenuButton<MemoVisibility>(
+                tooltip: '可见性',
+                initialValue: memo.visibility,
+                onSelected: (v) {
+                  ref.read(memoRepositoryProvider).update(
+                        memo.localId,
+                        MemoPatch(visibility: v),
+                      );
+                },
+                itemBuilder: (ctx) => [
+                  for (final v in MemoVisibility.values)
+                    PopupMenuItem(
+                      value: v,
+                      child: Text(v.name.toUpperCase()),
+                    ),
+                ],
+                child: Chip(
+                  visualDensity: VisualDensity.compact,
+                  backgroundColor: AppTheme.paperElevated,
+                  side: const BorderSide(color: AppTheme.line),
+                  avatar: Icon(
+                    Icons.public,
+                    size: 16,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  label: Text(
+                    memo.visibility.name.toUpperCase(),
+                    style: TextStyle(
+                      color: scheme.onSurface,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: memo.pinned ? '取消置顶' : '置顶',
+                icon: Icon(
+                  memo.pinned
+                      ? Icons.push_pin_rounded
+                      : Icons.push_pin_outlined,
+                ),
+                onPressed: () => ref
+                    .read(memoRepositoryProvider)
+                    .pin(memo.localId, !memo.pinned),
+              ),
+              IconButton(
+                tooltip: memo.archived ? '取消归档' : '归档',
+                icon: Icon(
+                  memo.archived
+                      ? Icons.unarchive_outlined
+                      : Icons.archive_outlined,
+                ),
+                onPressed: () => ref
+                    .read(memoRepositoryProvider)
+                    .archive(memo.localId, !memo.archived),
+              ),
+              if (allowAttach)
+                IconButton(
+                  tooltip: '附件（仅本地工作区）',
+                  icon: const Icon(Icons.attach_file_rounded),
+                  onPressed: () => _attach(memo),
+                ),
+              IconButton(
+                tooltip: '历史版本',
+                icon: const Icon(Icons.history_rounded),
+                onPressed: () => _showHistory(memo),
+              ),
+              IconButton(
+                tooltip: '删除',
+                icon: const Icon(Icons.delete_outline_rounded),
+                onPressed: () async {
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('删除笔记？'),
+                      content: const Text('将从本地删除，并在联网后同步到服务器。'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('取消'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('删除'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (ok == true) {
+                    _autosaveTimer?.cancel();
+                    await ref
+                        .read(memoRepositoryProvider)
+                        .softDelete(memo.localId);
+                    ref.read(selectedMemoIdProvider.notifier).state = null;
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+        if (publicUrl != null) _PublicLinkBar(url: publicUrl),
+        Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.5)),
+        Expanded(
+          child: _preview
+              ? Markdown(
+                  controller: _scrollController,
+                  data: _controller.text.isEmpty
+                      ? '*空笔记 — 切换到编辑开始书写*'
+                      : _controller.text,
+                  selectable: true,
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
+                      .copyWith(
+                    p: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          height: 1.55,
+                        ),
+                    h1: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                    h2: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                    blockquoteDecoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest
+                          .withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border(
+                        left: BorderSide(color: scheme.primary, width: 3),
+                      ),
+                    ),
+                  ),
+                )
+              : TextField(
+                  controller: _controller,
+                  maxLines: null,
+                  expands: true,
+                  textAlignVertical: TextAlignVertical.top,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        height: 1.55,
+                        fontFamily: 'Menlo',
+                        fontFamilyFallback: const [
+                          'Monaco',
+                          'Consolas',
+                          'monospace',
+                        ],
+                        fontSize: 14.5,
+                      ),
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    filled: false,
+                    contentPadding: EdgeInsets.fromLTRB(20, 16, 20, 24),
+                    hintText: '用 Markdown 书写… 支持 #标签\n停顿后自动保存并渲染预览',
+                  ),
+                  onChanged: (_) => _scheduleAutosave(memo),
+                ),
+        ),
+        if (memo.tags.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: memo.tags
+                  .map(
+                    (String t) => ActionChip(
+                      label: Text(
+                        '#$t',
+                        style: const TextStyle(
+                          color: AppTheme.ink,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      backgroundColor: AppTheme.paperElevated,
+                      side: const BorderSide(color: AppTheme.line),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () {
+                        ref.read(memoFilterProvider.notifier).state =
+                            MemoQuery(tag: t);
+                        ref.read(searchQueryProvider.notifier).state = '';
+                      },
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _PublicLinkBar extends StatelessWidget {
+  const _PublicLinkBar({required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppTheme.accentSoft.withValues(alpha: 0.65),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+        child: Row(
+          children: [
+            const Icon(Icons.link, size: 16, color: AppTheme.accent),
+            const SizedBox(width: 8),
+            const Text(
+              '公开链接',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.accent,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SelectableText(
+                url,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.ink,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: '复制公开链接',
+              icon: const Icon(Icons.copy, size: 16, color: AppTheme.accent),
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: url));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('已复制公开链接')),
+                  );
+                }
+              },
+            ),
+            IconButton(
+              tooltip: '浏览器打开',
+              icon: const Icon(Icons.open_in_new, size: 16, color: AppTheme.accent),
+              onPressed: () async {
+                final uri = Uri.tryParse(url);
+                if (uri != null) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

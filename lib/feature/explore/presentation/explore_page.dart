@@ -92,45 +92,35 @@ class ExplorePage extends ConsumerWidget {
                   final m = list[i];
                   final url = memosPublicUrl(base, m.name);
                   return Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Header: public link always visible
+                        Container(
+                          padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+                          decoration: BoxDecoration(
+                            color: scheme.primaryContainer.withValues(alpha: 0.45),
+                            borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(14),
+                            ),
+                          ),
+                          child: Row(
                             children: [
                               Icon(Icons.public, size: 16, color: scheme.primary),
-                              const SizedBox(width: 6),
-                              Text(
-                                m.updateTime != null
-                                    ? DateFormat('yyyy/MM/dd HH:mm')
-                                        .format(m.updateTime!)
-                                    : m.name,
-                                style: Theme.of(context).textTheme.labelMedium,
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: SelectableText(
+                                  url,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: scheme.onSurface,
+                                  ),
+                                ),
                               ),
-                              const Spacer(),
-                              if (m.pinned)
-                                Icon(Icons.push_pin,
-                                    size: 14, color: scheme.primary),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          MarkdownBody(
-                            data: m.content.isEmpty ? '*空*' : m.content,
-                            selectable: true,
-                          ),
-                          const SizedBox(height: 10),
-                          SelectableText(
-                            url,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: scheme.primary),
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              TextButton.icon(
+                              IconButton(
+                                tooltip: '复制',
+                                icon: Icon(Icons.copy, size: 16, color: scheme.primary),
                                 onPressed: () async {
                                   await Clipboard.setData(
                                     ClipboardData(text: url),
@@ -141,10 +131,11 @@ class ExplorePage extends ConsumerWidget {
                                     );
                                   }
                                 },
-                                icon: const Icon(Icons.copy, size: 16),
-                                label: const Text('复制链接'),
                               ),
-                              TextButton.icon(
+                              IconButton(
+                                tooltip: '打开',
+                                icon: Icon(Icons.open_in_new,
+                                    size: 16, color: scheme.primary),
                                 onPressed: () async {
                                   final uri = Uri.tryParse(url);
                                   if (uri != null) {
@@ -154,13 +145,34 @@ class ExplorePage extends ConsumerWidget {
                                     );
                                   }
                                 },
-                                icon: const Icon(Icons.open_in_new, size: 16),
-                                label: const Text('打开'),
                               ),
                             ],
                           ),
-                        ],
-                      ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                m.updateTime != null
+                                    ? DateFormat('yyyy/MM/dd HH:mm')
+                                        .format(m.updateTime!)
+                                    : m.name,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelMedium
+                                    ?.copyWith(color: scheme.onSurfaceVariant),
+                              ),
+                              const SizedBox(height: 8),
+                              MarkdownBody(
+                                data: m.content.isEmpty ? '*空*' : m.content,
+                                selectable: true,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   );
                 },

@@ -106,8 +106,14 @@ class HomeShell extends ConsumerWidget {
                     // —— Primary icon rail (signature navigation) ——
                     _PrimaryRail(
                       mode: mode,
-                      onMode: (m) =>
-                          ref.read(appViewModeProvider.notifier).state = m,
+                      onMode: (m) {
+                        ref.read(appViewModeProvider.notifier).state = m;
+                        // Feed is a browse stream — always start from the list.
+                        if (m == AppViewMode.feed) {
+                          ref.read(selectedMemoIdProvider.notifier).state =
+                              null;
+                        }
+                      },
                       onToggleWorkspace: isWide
                           ? () {
                               ref
@@ -503,12 +509,15 @@ class _WideContent extends StatelessWidget {
           ],
         );
       case AppViewMode.feed:
-        return const Row(
-          children: [
-            Expanded(flex: 5, child: MemoFeedPanel()),
-            VerticalDivider(width: 1),
-            Expanded(flex: 4, child: MemoDetailPanel()),
-          ],
+        // Full-bleed feed; open full note only after tap (no side editor).
+        return Consumer(
+          builder: (context, ref, _) {
+            final id = ref.watch(selectedMemoIdProvider);
+            if (id != null) {
+              return const MemoDetailPanel(showBack: true);
+            }
+            return const MemoFeedPanel();
+          },
         );
       case AppViewMode.explore:
         return const ExplorePage();

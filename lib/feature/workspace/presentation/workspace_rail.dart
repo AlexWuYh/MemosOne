@@ -5,7 +5,6 @@ import '../../../app/providers.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../domain/entities/sync_models.dart';
 import '../../../domain/entities/workspace.dart';
-import '../../setting/presentation/settings_page.dart';
 import 'workspace_dialogs.dart';
 
 class WorkspaceRail extends ConsumerWidget {
@@ -144,15 +143,6 @@ class WorkspaceRail extends ConsumerWidget {
                   showLoginDialog(context, ref, ws);
                 },
               ),
-            ListTile(
-              leading: const Icon(Icons.settings_outlined),
-              title: const Text('设置'),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const SettingsPage(),
-                ),
-              ),
-            ),
             const SizedBox(height: 8),
           ],
         ),

@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../../../app/providers.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../domain/entities/memo.dart';
 
 /// Focus node for Ctrl/Cmd+F from [HomeShell].
@@ -130,8 +131,18 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: InputChip(
+                backgroundColor: AppTheme.accentSoft,
+                side: BorderSide(
+                  color: AppTheme.accent.withValues(alpha: 0.35),
+                ),
+                deleteIconColor: AppTheme.accent,
                 label: Text(
                   '日期 ${filter.day!.year}-${filter.day!.month.toString().padLeft(2, '0')}-${filter.day!.day.toString().padLeft(2, '0')}',
+                  style: const TextStyle(
+                    color: AppTheme.accent,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
                 ),
                 onDeleted: () {
                   ref.read(memoFilterProvider.notifier).state =

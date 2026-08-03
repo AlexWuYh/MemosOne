@@ -140,9 +140,43 @@ abstract final class AppTheme {
       chipTheme: ChipThemeData(
         backgroundColor: paperElevated,
         selectedColor: accentSoft,
+        disabledColor: line,
+        deleteIconColor: inkMuted,
         side: const BorderSide(color: line),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+        // Explicit ink color — avoid white-on-light chips from Material defaults.
+        labelStyle: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          color: ink,
+        ),
+        secondaryLabelStyle: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          color: ink,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+      ),
+      // SegmentedButton selected state can default to low-contrast / near-white labels.
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          foregroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return seed;
+            }
+            return inkMuted;
+          }),
+          backgroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return accentSoft;
+            }
+            return Colors.transparent;
+          }),
+          side: WidgetStateProperty.all(const BorderSide(color: line)),
+          textStyle: WidgetStateProperty.all(
+            const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          ),
+        ),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: seed,

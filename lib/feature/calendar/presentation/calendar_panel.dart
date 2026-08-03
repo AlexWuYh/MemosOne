@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../app/navigation_state.dart';
 import '../../../app/providers.dart';
+import '../../../core/theme/app_theme.dart';
 
 final _activityProvider =
     FutureProvider.autoDispose.family<Map<DateTime, int>, ({int y, int m})>(
@@ -74,14 +75,27 @@ class CalendarPanel extends ConsumerWidget {
         if (filter.day != null)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: InputChip(
-              label: Text(
-                '已过滤：${DateFormat('yyyy-MM-dd').format(filter.day!)}',
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: InputChip(
+                backgroundColor: AppTheme.accentSoft,
+                side: BorderSide(
+                  color: AppTheme.accent.withValues(alpha: 0.35),
+                ),
+                deleteIconColor: AppTheme.accent,
+                label: Text(
+                  '已过滤：${DateFormat('yyyy-MM-dd').format(filter.day!)}',
+                  style: const TextStyle(
+                    color: AppTheme.accent,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+                onDeleted: () {
+                  ref.read(memoFilterProvider.notifier).state =
+                      filter.copyWith(clearDay: true);
+                },
               ),
-              onDeleted: () {
-                ref.read(memoFilterProvider.notifier).state =
-                    filter.copyWith(clearDay: true);
-              },
             ),
           ),
         Padding(
@@ -206,6 +220,10 @@ class _MonthHeatmap extends ConsumerWidget {
                       return const SizedBox.shrink();
                     }
                     final day = DateTime(year, month, dayNum);
+                    final now = DateTime.now();
+                    final isToday = day.year == now.year &&
+                        day.month == now.month &&
+                        day.day == now.day;
                     final count = activity[day] ?? 0;
                     final t = maxC == 0 ? 0.0 : count / maxC;
                     final bg = count == 0
@@ -215,6 +233,10 @@ class _MonthHeatmap extends ConsumerWidget {
                             scheme.primary,
                             t.clamp(0.15, 1.0),
                           )!;
+                    // Heat cells with primary fill need light text; empty use ink.
+                    final fg = count > 0
+                        ? Colors.white
+                        : (isToday ? AppTheme.accent : scheme.onSurface);
                     final selected = ref.watch(memoFilterProvider).day;
                     final isSel = selected != null &&
                         selected.year == day.year &&
@@ -238,15 +260,20 @@ class _MonthHeatmap extends ConsumerWidget {
                           }
                         },
                         child: Container(
-                          decoration: isSel
-                              ? BoxDecoration(
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: scheme.onPrimary,
-                                    width: 2,
-                                  ),
-                                )
-                              : null,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: isToday
+                                ? Border.all(
+                                    color: AppTheme.accent,
+                                    width: isSel ? 2.5 : 2,
+                                  )
+                                : isSel
+                                    ? Border.all(
+                                        color: AppTheme.ink,
+                                        width: 2,
+                                      )
+                                    : null,
+                          ),
                           child: Center(
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -254,11 +281,10 @@ class _MonthHeatmap extends ConsumerWidget {
                                 Text(
                                   '$dayNum',
                                   style: TextStyle(
-                                    fontWeight: FontWeight.w600,
+                                    fontWeight:
+                                        isToday ? FontWeight.w800 : FontWeight.w600,
                                     fontSize: 13,
-                                    color: count > 0
-                                        ? scheme.onPrimary
-                                        : scheme.onSurface,
+                                    color: fg,
                                   ),
                                 ),
                                 if (count > 0)
@@ -266,8 +292,7 @@ class _MonthHeatmap extends ConsumerWidget {
                                     '$count',
                                     style: TextStyle(
                                       fontSize: 10,
-                                      color: scheme.onPrimary
-                                          .withValues(alpha: 0.9),
+                                      color: fg.withValues(alpha: 0.92),
                                     ),
                                   ),
                               ],
