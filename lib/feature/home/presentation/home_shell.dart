@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
 import '../../../domain/entities/memo.dart';
+import '../../../domain/entities/sync_models.dart';
+import '../../../domain/entities/workspace.dart';
 import '../../memo/presentation/memo_detail_panel.dart';
 import '../../memo/presentation/memo_list_panel.dart';
 import '../../workspace/presentation/workspace_rail.dart';
@@ -25,8 +27,9 @@ class HomeShell extends ConsumerWidget {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      showDragHandle: true,
       builder: (_) => const SizedBox(
-        height: 480,
+        height: 520,
         child: WorkspaceRail(),
       ),
     );
@@ -35,11 +38,12 @@ class HomeShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final width = MediaQuery.sizeOf(context).width;
-    final isWide = width >= 900;
-    final isMedium = width >= 600 && width < 900;
+    final isWide = width >= 960;
+    final isMedium = width >= 700 && width < 960;
     final selectedId = ref.watch(selectedMemoIdProvider);
     final active = ref.watch(activeWorkspaceProvider);
     final sync = ref.watch(syncStatusProvider).valueOrNull;
+    final scheme = Theme.of(context).colorScheme;
 
     return CallbackShortcuts(
       bindings: {
@@ -70,48 +74,57 @@ class HomeShell extends ConsumerWidget {
         autofocus: true,
         child: Scaffold(
           appBar: AppBar(
-            title: Text(active?.name ?? 'Memos One'),
+            titleSpacing: 12,
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(active?.name ?? 'Memos One'),
+                if (active != null)
+                  Text(
+                    active.isMemos
+                        ? (active.serverBaseUrl ?? 'Memos')
+                        : '本地工作区',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                  ),
+              ],
+            ),
             leading: (!isWide && active != null)
                 ? IconButton(
-                    tooltip: 'Workspaces',
-                    icon: const Icon(Icons.workspaces_outlined),
+                    tooltip: '工作区',
+                    icon: const Icon(Icons.menu_rounded),
                     onPressed: () => _openWorkspaces(context),
                   )
                 : null,
             actions: [
-              if (active?.isMemos == true && sync != null)
-                Padding(
-                  padding: const EdgeInsets.only(right: 4),
-                  child: Center(
-                    child: Text(
-                      sync.lastPullAt == null
-                          ? 'Never synced'
-                          : 'Last sync ${_formatAgo(sync.lastPullAt!)}',
-                      style: Theme.of(context).textTheme.labelSmall,
-                    ),
-                  ),
-                ),
+              if (active?.isMemos == true) ...[
+                _SyncChip(snapshot: sync, workspace: active!),
+                const SizedBox(width: 4),
+              ],
               IconButton(
-                tooltip: 'New memo',
+                tooltip: '新建笔记',
                 onPressed: active == null ? null : () => _newMemo(ref),
-                icon: const Icon(Icons.add),
+                icon: const Icon(Icons.add_rounded),
               ),
+              const SizedBox(width: 6),
             ],
           ),
           floatingActionButton: (!isWide && active != null)
-              ? FloatingActionButton(
+              ? FloatingActionButton.extended(
                   onPressed: () => _newMemo(ref),
-                  child: const Icon(Icons.add),
+                  icon: const Icon(Icons.edit_rounded),
+                  label: const Text('写笔记'),
                 )
               : null,
           body: active == null
-              ? const _EmptyOnboarding()
+              ? const Center(child: Text('请在工作区中连接 Memos'))
               : isWide
                   ? const Row(
                       children: [
-                        SizedBox(width: 260, child: WorkspaceRail()),
+                        SizedBox(width: 268, child: WorkspaceRail()),
                         VerticalDivider(width: 1),
-                        SizedBox(width: 320, child: MemoListPanel()),
+                        SizedBox(width: 340, child: MemoListPanel()),
                         VerticalDivider(width: 1),
                         Expanded(child: MemoDetailPanel()),
                       ],
@@ -120,22 +133,20 @@ class HomeShell extends ConsumerWidget {
                       ? Row(
                           children: [
                             SizedBox(
-                              width: 72,
+                              width: 64,
                               child: Material(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .surfaceContainerLowest,
+                                color: scheme.surfaceContainerLowest,
                                 child: Column(
                                   children: [
-                                    const SizedBox(height: 8),
+                                    const SizedBox(height: 10),
                                     IconButton(
-                                      tooltip: 'Workspaces',
-                                      icon: const Icon(Icons.workspaces),
+                                      tooltip: '工作区',
+                                      icon: const Icon(Icons.workspaces_outline),
                                       onPressed: () => _openWorkspaces(context),
                                     ),
                                     IconButton(
-                                      tooltip: 'Search',
-                                      icon: const Icon(Icons.search),
+                                      tooltip: '搜索',
+                                      icon: const Icon(Icons.search_rounded),
                                       onPressed: () => ref
                                           .read(searchFocusNodeProvider)
                                           .requestFocus(),
@@ -146,7 +157,7 @@ class HomeShell extends ConsumerWidget {
                             ),
                             const VerticalDivider(width: 1),
                             const SizedBox(
-                              width: 280,
+                              width: 300,
                               child: MemoListPanel(compact: true),
                             ),
                             const VerticalDivider(width: 1),
@@ -154,20 +165,7 @@ class HomeShell extends ConsumerWidget {
                           ],
                         )
                       : selectedId == null
-                          ? Column(
-                              children: [
-                                Expanded(
-                                  child: MemoListPanel(
-                                    onSelect: (_) {},
-                                  ),
-                                ),
-                                ListTile(
-                                  leading: const Icon(Icons.workspaces),
-                                  title: const Text('Workspaces & settings'),
-                                  onTap: () => _openWorkspaces(context),
-                                ),
-                              ],
-                            )
+                          ? const MemoListPanel()
                           : const MemoDetailPanel(showBack: true),
         ),
       ),
@@ -175,67 +173,45 @@ class HomeShell extends ConsumerWidget {
   }
 }
 
-String _formatAgo(DateTime t) {
-  final d = DateTime.now().difference(t);
-  if (d.inSeconds < 60) return 'just now';
-  if (d.inMinutes < 60) return '${d.inMinutes}m ago';
-  if (d.inHours < 24) return '${d.inHours}h ago';
-  return '${d.inDays}d ago';
-}
+class _SyncChip extends ConsumerWidget {
+  const _SyncChip({required this.snapshot, required this.workspace});
 
-class _EmptyOnboarding extends ConsumerWidget {
-  const _EmptyOnboarding();
+  final SyncStatusSnapshot? snapshot;
+  final Workspace workspace;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'Memos One',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'One Client. Every Device. Your Memos.\nOffline first — local is source of truth.',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              FilledButton.icon(
-                onPressed: () async {
-                  final ws = await ref
-                      .read(workspaceRepositoryProvider)
-                      .createLocal(name: 'Personal');
-                  await ref
-                      .read(activeWorkspaceIdProvider.notifier)
-                      .select(ws.localId);
-                },
-                icon: const Icon(Icons.folder_outlined),
-                label: const Text('Create local workspace'),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () {
-                  showModalBottomSheet<void>(
-                    context: context,
-                    builder: (_) => const SizedBox(
-                      height: 420,
-                      child: WorkspaceRail(),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.cloud_outlined),
-                label: const Text('Connect Memos server…'),
-              ),
-            ],
-          ),
+    final s = snapshot ?? const SyncStatusSnapshot.idle();
+    final scheme = Theme.of(context).colorScheme;
+    final (icon, label) = switch (s.state) {
+      GlobalSyncState.syncing => (Icons.sync_rounded, '同步中'),
+      GlobalSyncState.offline => (Icons.cloud_off_rounded, '离线'),
+      GlobalSyncState.authRequired => (Icons.lock_outline, '需登录'),
+      GlobalSyncState.error => (Icons.error_outline, '同步异常'),
+      GlobalSyncState.idle => (
+          Icons.cloud_done_outlined,
+          s.pendingCount > 0 ? '${s.pendingCount} 待同步' : '已同步',
         ),
+    };
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: ActionChip(
+        avatar: Icon(icon, size: 16, color: scheme.primary),
+        label: Text(label),
+        visualDensity: VisualDensity.compact,
+        onPressed: () => ref.read(syncServiceProvider).syncNow(workspace),
+        tooltip: s.lastPullAt == null
+            ? '点击立即同步'
+            : '上次同步 ${_ago(s.lastPullAt!)} · 点击立即同步',
       ),
     );
+  }
+
+  String _ago(DateTime t) {
+    final d = DateTime.now().difference(t);
+    if (d.inSeconds < 60) return '刚刚';
+    if (d.inMinutes < 60) return '${d.inMinutes} 分钟前';
+    if (d.inHours < 24) return '${d.inHours} 小时前';
+    return '${d.inDays} 天前';
   }
 }

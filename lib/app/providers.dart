@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -63,12 +66,106 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
   );
 });
 
+final syncPrefsProvider =
+    StateNotifierProvider<SyncPrefsController, SyncPrefs>((ref) {
+  return SyncPrefsController(ref.watch(preferencesStoreProvider));
+});
+
+class SyncPrefs {
+  const SyncPrefs({
+    required this.syncOnLaunch,
+    required this.syncOnExit,
+    required this.syncOnReconnect,
+    required this.periodicSyncEnabled,
+    required this.syncIntervalMinutes,
+  });
+
+  final bool syncOnLaunch;
+  final bool syncOnExit;
+  final bool syncOnReconnect;
+  final bool periodicSyncEnabled;
+  final int syncIntervalMinutes;
+}
+
+class SyncPrefsController extends StateNotifier<SyncPrefs> {
+  SyncPrefsController(this._prefs)
+      : super(
+          SyncPrefs(
+            syncOnLaunch: _prefs.syncOnLaunch,
+            syncOnExit: _prefs.syncOnExit,
+            syncOnReconnect: _prefs.syncOnReconnect,
+            periodicSyncEnabled: _prefs.periodicSyncEnabled,
+            syncIntervalMinutes: _prefs.syncIntervalMinutes,
+          ),
+        );
+
+  final PreferencesStore _prefs;
+
+  Future<void> setSyncOnLaunch(bool v) async {
+    await _prefs.setSyncOnLaunch(v);
+    state = SyncPrefs(
+      syncOnLaunch: v,
+      syncOnExit: state.syncOnExit,
+      syncOnReconnect: state.syncOnReconnect,
+      periodicSyncEnabled: state.periodicSyncEnabled,
+      syncIntervalMinutes: state.syncIntervalMinutes,
+    );
+  }
+
+  Future<void> setSyncOnExit(bool v) async {
+    await _prefs.setSyncOnExit(v);
+    state = SyncPrefs(
+      syncOnLaunch: state.syncOnLaunch,
+      syncOnExit: v,
+      syncOnReconnect: state.syncOnReconnect,
+      periodicSyncEnabled: state.periodicSyncEnabled,
+      syncIntervalMinutes: state.syncIntervalMinutes,
+    );
+  }
+
+  Future<void> setSyncOnReconnect(bool v) async {
+    await _prefs.setSyncOnReconnect(v);
+    state = SyncPrefs(
+      syncOnLaunch: state.syncOnLaunch,
+      syncOnExit: state.syncOnExit,
+      syncOnReconnect: v,
+      periodicSyncEnabled: state.periodicSyncEnabled,
+      syncIntervalMinutes: state.syncIntervalMinutes,
+    );
+  }
+
+  Future<void> setPeriodicSyncEnabled(bool v) async {
+    await _prefs.setPeriodicSyncEnabled(v);
+    state = SyncPrefs(
+      syncOnLaunch: state.syncOnLaunch,
+      syncOnExit: state.syncOnExit,
+      syncOnReconnect: state.syncOnReconnect,
+      periodicSyncEnabled: v,
+      syncIntervalMinutes: state.syncIntervalMinutes,
+    );
+  }
+
+  Future<void> setSyncIntervalMinutes(int minutes) async {
+    await _prefs.setSyncIntervalMinutes(minutes);
+    state = SyncPrefs(
+      syncOnLaunch: state.syncOnLaunch,
+      syncOnExit: state.syncOnExit,
+      syncOnReconnect: state.syncOnReconnect,
+      periodicSyncEnabled: state.periodicSyncEnabled,
+      syncIntervalMinutes: minutes,
+    );
+  }
+}
+
 final syncWorkerProvider = Provider<SyncWorker>((ref) {
+  final prefs = ref.watch(preferencesStoreProvider);
   final worker = SyncWorker(
     db: ref.watch(appDatabaseProvider),
     tokens: ref.watch(secureTokenStoreProvider),
-    // MemoRepositoryImpl implements SyncMemoGateway (sync port).
     memos: ref.watch(memoRepositoryImplProvider),
+    fullPullIntervalResolver: () =>
+        Duration(minutes: prefs.syncIntervalMinutes),
+    periodicSyncEnabledResolver: () => prefs.periodicSyncEnabled,
   );
   ref.onDispose(worker.dispose);
   return worker;
@@ -76,6 +173,21 @@ final syncWorkerProvider = Provider<SyncWorker>((ref) {
 
 final syncServiceProvider = Provider<SyncService>((ref) {
   return ref.watch(syncWorkerProvider);
+});
+
+/// Starts connectivity listener for auto-sync on reconnect.
+final connectivitySyncBootstrapProvider = Provider<void>((ref) {
+  final sub = Connectivity().onConnectivityChanged.listen((results) async {
+    final offline = results.every((e) => e == ConnectivityResult.none);
+    if (offline) return;
+    final prefs = ref.read(syncPrefsProvider);
+    if (!prefs.syncOnReconnect) return;
+    final ws = ref.read(activeWorkspaceProvider);
+    if (ws == null || !ws.isMemos) return;
+    if (ws.authState != WorkspaceAuthState.ok) return;
+    await ref.read(syncServiceProvider).syncNow(ws);
+  });
+  ref.onDispose(sub.cancel);
 });
 
 final themeModeProvider =
@@ -141,6 +253,17 @@ final activeWorkspaceProvider = Provider<Workspace?>((ref) {
   return list.first;
 });
 
+/// True when user has completed first-run connect OR has any workspace.
+final needsOnboardingProvider = Provider<bool>((ref) {
+  final prefs = ref.watch(preferencesStoreProvider);
+  final workspaces = ref.watch(workspacesProvider);
+  if (workspaces.isLoading) return false;
+  final list = workspaces.valueOrNull ?? const [];
+  if (list.isEmpty && !prefs.onboardingDone) return true;
+  // No Memos cloud yet and only local? Still allow home; onboarding optional.
+  return list.isEmpty;
+});
+
 final memoFilterProvider =
     StateProvider<MemoQuery>((ref) => const MemoQuery());
 
@@ -173,12 +296,14 @@ final selectedMemoProvider = Provider<Memo?>((ref) {
 });
 
 final syncStatusProvider = StreamProvider<SyncStatusSnapshot>((ref) {
+  // Ensure reconnect listener is active.
+  ref.watch(connectivitySyncBootstrapProvider);
+
   final ws = ref.watch(activeWorkspaceProvider);
   if (ws == null || !ws.isMemos) {
     return Stream.value(const SyncStatusSnapshot.idle());
   }
   final sync = ref.watch(syncServiceProvider);
-  // ensure worker started
   ref.listen<Workspace?>(activeWorkspaceProvider, (prev, next) {
     if (next != null && next.isMemos) {
       sync.start(next);
@@ -188,7 +313,13 @@ final syncStatusProvider = StreamProvider<SyncStatusSnapshot>((ref) {
     }
   });
   if (ws.isMemos) {
-    Future.microtask(() => sync.start(ws));
+    Future.microtask(() async {
+      await sync.start(ws);
+      final prefs = ref.read(syncPrefsProvider);
+      if (prefs.syncOnLaunch && ws.authState == WorkspaceAuthState.ok) {
+        await sync.syncNow(ws);
+      }
+    });
   }
   return sync.watchStatus(ws.localId);
 });

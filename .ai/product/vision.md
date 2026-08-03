@@ -29,9 +29,16 @@ Upstream: [https://github.com/usememos/memos](https://github.com/usememos/memos)
 
 | Type | V1 | Description |
 | ---- | -- | ----------- |
-| **Local** | Yes | Pure SQLite; no server |
-| **Memos Server** | Yes | Connect self-hosted Memos; bidirectional sync |
+| **Memos Server (primary)** | Yes | Connect self-hosted Memos first; local SQLite is offline cache + SoT for UX; auto sync |
+| **Local-only** | Yes (secondary) | Pure SQLite; optional for users without a server |
 | **Cloud Storage** (Git / WebDAV / S3) | No | Storage Adapter reserved; post-V1 |
+
+### Cloud-first offline model (product rule)
+
+1. **First launch** steers users to connect a Memos instance and complete first sync.
+2. After first sync, **offline edit is fully supported** (local SoT for UX).
+3. When network returns, **auto-sync** (configurable): on launch, on exit, on reconnect, on interval.
+4. Pure local workspace remains available as a secondary path, not the default narrative.
 
 ## Design principles
 

@@ -8,6 +8,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'app/app.dart';
 import 'app/providers.dart';
+import 'domain/entities/workspace.dart';
 import 'infrastructure/database/app_database.dart';
 import 'infrastructure/storage/preferences_store.dart';
 
@@ -20,13 +21,14 @@ Future<void> main() async {
   if (!kIsWeb &&
       (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
     await windowManager.ensureInitialized();
-    final size = prefStore.windowSize ?? const Size(1200, 800);
+    final size = prefStore.windowSize ?? const Size(1240, 820);
     final offset = prefStore.windowOffset;
     final options = WindowOptions(
       size: size,
       center: offset == null,
-      minimumSize: const Size(400, 600),
+      minimumSize: const Size(420, 640),
       title: 'Memos One',
+      titleBarStyle: TitleBarStyle.normal,
     );
     await windowManager.waitUntilReadyToShow(options, () async {
       if (offset != null) {
@@ -35,7 +37,6 @@ Future<void> main() async {
       await windowManager.show();
       await windowManager.focus();
     });
-    windowManager.addListener(_WindowPersistence(prefStore));
   }
 
   final db = await AppDatabase.open();
@@ -46,25 +47,79 @@ Future<void> main() async {
         sharedPreferencesProvider.overrideWithValue(prefs),
         appDatabaseProvider.overrideWithValue(db),
       ],
-      child: const MemosOneApp(),
+      child: const _AppRoot(),
     ),
   );
 }
 
-class _WindowPersistence with WindowListener {
-  _WindowPersistence(this._prefs);
-
-  final PreferencesStore _prefs;
+class _AppRoot extends ConsumerStatefulWidget {
+  const _AppRoot();
 
   @override
-  void onWindowMoved() => _save();
+  ConsumerState<_AppRoot> createState() => _AppRootState();
+}
+
+class _AppRootState extends ConsumerState<_AppRoot> with WindowListener {
+  var _exiting = false;
 
   @override
-  void onWindowResized() => _save();
+  void initState() {
+    super.initState();
+    if (!kIsWeb &&
+        (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+      windowManager.addListener(this);
+      windowManager.setPreventClose(true);
+    }
+  }
 
-  Future<void> _save() async {
+  @override
+  void dispose() {
+    if (!kIsWeb &&
+        (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+      windowManager.removeListener(this);
+    }
+    super.dispose();
+  }
+
+  @override
+  void onWindowMoved() => _saveWindow();
+
+  @override
+  void onWindowResized() => _saveWindow();
+
+  Future<void> _saveWindow() async {
+    final prefs = ref.read(preferencesStoreProvider);
     final size = await windowManager.getSize();
     final offset = await windowManager.getPosition();
-    await _prefs.saveWindow(size: size, offset: offset);
+    await prefs.saveWindow(size: size, offset: offset);
+  }
+
+  @override
+  Future<void> onWindowClose() async {
+    if (_exiting) return;
+    _exiting = true;
+    try {
+      final prefs = ref.read(syncPrefsProvider);
+      if (prefs.syncOnExit) {
+        final ws = ref.read(activeWorkspaceProvider);
+        if (ws != null &&
+            ws.isMemos &&
+            ws.authState == WorkspaceAuthState.ok) {
+          try {
+            await ref.read(syncServiceProvider).syncNow(ws);
+          } catch (_) {
+            // Don't block exit forever on network failure.
+          }
+        }
+      }
+      await _saveWindow();
+    } finally {
+      await windowManager.destroy();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const MemosOneApp();
   }
 }

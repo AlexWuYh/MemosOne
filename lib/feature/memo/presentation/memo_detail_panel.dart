@@ -20,9 +20,10 @@ class MemoDetailPanel extends ConsumerStatefulWidget {
 
 class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
   final _controller = TextEditingController();
+  final _scrollController = ScrollController();
   String? _boundId;
   String _boundContent = '';
-  bool _preview = false;
+  bool _preview = true;
   bool _saving = false;
   Timer? _autosaveTimer;
   ProviderSubscription<Memo?>? _memoSub;
@@ -33,7 +34,6 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
     _memoSub = ref.listenManual<Memo?>(selectedMemoProvider, (prev, next) {
       _onMemoChanged(next);
     });
-    // Initial bind after first frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _onMemoChanged(ref.read(selectedMemoProvider));
@@ -45,6 +45,7 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
     _autosaveTimer?.cancel();
     _memoSub?.close();
     _controller.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -53,25 +54,28 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
     if (memo == null) {
       _boundId = null;
       _boundContent = '';
-      if (_controller.text.isNotEmpty) {
-        _controller.clear();
-      }
-      if (mounted) setState(() {});
+      if (_controller.text.isNotEmpty) _controller.clear();
+      if (mounted) setState(() => _preview = true);
       return;
     }
     if (_boundId == memo.localId && _controller.text == memo.content) {
       _boundContent = memo.content;
       return;
     }
-    // Switching away: try flush previous draft once.
     final previousId = _boundId;
     final previousBound = _boundContent;
     final draft = _controller.text;
     if (previousId != null &&
         previousId != memo.localId &&
-        draft != previousBound &&
-        draft.isNotEmpty) {
-      unawaited(_saveById(previousId, draft, expectedContent: previousBound));
+        draft != previousBound) {
+      unawaited(
+        _saveById(
+          previousId,
+          draft,
+          expectedContent: previousBound,
+          enterPreview: false,
+        ),
+      );
     }
     _boundId = memo.localId;
     _boundContent = memo.content;
@@ -79,18 +83,21 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
       text: memo.content,
       selection: TextSelection.collapsed(offset: memo.content.length),
     );
-    if (mounted) setState(() {});
+    // New empty memo starts in edit mode; existing content shows markdown.
+    if (mounted) {
+      setState(() => _preview = memo.content.trim().isNotEmpty);
+    }
   }
 
   Future<void> _saveById(
     String localId,
     String content, {
     required String expectedContent,
+    bool enterPreview = true,
   }) async {
-    if (content == expectedContent) return;
-    // Abort if selection moved to another memo mid-flight after schedule.
-    if (_boundId != null && _boundId != localId) {
-      // still allow saving the previous id intentionally
+    if (content == expectedContent) {
+      if (enterPreview && mounted) setState(() => _preview = true);
+      return;
     }
     setState(() => _saving = true);
     try {
@@ -101,6 +108,9 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
       if (_boundId == localId) {
         _boundContent = content;
       }
+      if (enterPreview && mounted && _boundId == localId) {
+        setState(() => _preview = true);
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -108,20 +118,36 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
 
   void _scheduleAutosave(Memo memo) {
     _autosaveTimer?.cancel();
+    // Typing → leave preview so user sees raw markdown while editing.
+    if (_preview) setState(() => _preview = false);
     final localId = memo.localId;
     final expected = _boundContent;
     _autosaveTimer = Timer(
       const Duration(milliseconds: AppConstants.autosaveDebounceMs),
       () {
         if (!mounted) return;
-        // Only save if still editing this memo.
         if (_boundId != localId) return;
         final content = _controller.text;
-        if (content == expected || content == memo.content) return;
+        if (content == expected) return;
         unawaited(
-          _saveById(localId, content, expectedContent: expected),
+          _saveById(
+            localId,
+            content,
+            expectedContent: expected,
+            enterPreview: true,
+          ),
         );
       },
+    );
+  }
+
+  Future<void> _manualSave(Memo memo) async {
+    _autosaveTimer?.cancel();
+    await _saveById(
+      memo.localId,
+      _controller.text,
+      expectedContent: _boundContent,
+      enterPreview: true,
     );
   }
 
@@ -130,12 +156,22 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
     final memo = ref.watch(selectedMemoProvider);
     final workspace = ref.watch(activeWorkspaceProvider);
     final allowAttach = workspace == null || workspace.isLocal;
+    final scheme = Theme.of(context).colorScheme;
 
     if (memo == null) {
       return Center(
-        child: Text(
-          'Select or create a memo',
-          style: Theme.of(context).textTheme.titleMedium,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.article_outlined, size: 48, color: scheme.outline),
+            const SizedBox(height: 12),
+            Text(
+              '选择或新建一条笔记',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
         ),
       );
     }
@@ -143,166 +179,211 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Material(
-          elevation: 0,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Row(
-              children: [
-                if (widget.showBack)
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    onPressed: () =>
-                        ref.read(selectedMemoIdProvider.notifier).state = null,
-                  ),
-                Expanded(
-                  child: Text(
-                    memo.dirty ? 'Editing · unsynced' : 'Editing',
-                    style: Theme.of(context).textTheme.labelLarge,
-                  ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+          child: Row(
+            children: [
+              if (widget.showBack)
+                IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  onPressed: () =>
+                      ref.read(selectedMemoIdProvider.notifier).state = null,
                 ),
-                if (_saving)
-                  const Padding(
-                    padding: EdgeInsets.only(right: 8),
-                    child: SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(
+                    value: false,
+                    label: Text('编辑'),
+                    icon: Icon(Icons.edit_outlined, size: 16),
                   ),
-                PopupMenuButton<MemoVisibility>(
-                  tooltip: 'Visibility',
-                  initialValue: memo.visibility,
-                  onSelected: (v) {
-                    ref.read(memoRepositoryProvider).update(
-                          memo.localId,
-                          MemoPatch(visibility: v),
-                        );
-                  },
-                  itemBuilder: (ctx) => [
-                    for (final v in MemoVisibility.values)
-                      PopupMenuItem(
-                        value: v,
-                        child: Text(v.name.toUpperCase()),
+                  ButtonSegment(
+                    value: true,
+                    label: Text('预览'),
+                    icon: Icon(Icons.visibility_outlined, size: 16),
+                  ),
+                ],
+                selected: {_preview},
+                onSelectionChanged: (s) async {
+                  if (s.first) {
+                    await _manualSave(memo);
+                  } else {
+                    setState(() => _preview = false);
+                  }
+                },
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (_saving)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Text(
+                  memo.dirty ? '已保存 · 待同步' : '已保存',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
                       ),
-                  ],
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.public, size: 18),
-                        const SizedBox(width: 4),
-                        Text(
-                          memo.visibility.name.toUpperCase(),
-                          style: Theme.of(context).textTheme.labelMedium,
+                ),
+              const Spacer(),
+              PopupMenuButton<MemoVisibility>(
+                tooltip: '可见性',
+                initialValue: memo.visibility,
+                onSelected: (v) {
+                  ref.read(memoRepositoryProvider).update(
+                        memo.localId,
+                        MemoPatch(visibility: v),
+                      );
+                },
+                itemBuilder: (ctx) => [
+                  for (final v in MemoVisibility.values)
+                    PopupMenuItem(
+                      value: v,
+                      child: Text(v.name.toUpperCase()),
+                    ),
+                ],
+                child: Chip(
+                  visualDensity: VisualDensity.compact,
+                  avatar: const Icon(Icons.public, size: 16),
+                  label: Text(memo.visibility.name.toUpperCase()),
+                ),
+              ),
+              IconButton(
+                tooltip: memo.pinned ? '取消置顶' : '置顶',
+                icon: Icon(
+                  memo.pinned
+                      ? Icons.push_pin_rounded
+                      : Icons.push_pin_outlined,
+                ),
+                onPressed: () => ref
+                    .read(memoRepositoryProvider)
+                    .pin(memo.localId, !memo.pinned),
+              ),
+              IconButton(
+                tooltip: memo.archived ? '取消归档' : '归档',
+                icon: Icon(
+                  memo.archived
+                      ? Icons.unarchive_outlined
+                      : Icons.archive_outlined,
+                ),
+                onPressed: () => ref
+                    .read(memoRepositoryProvider)
+                    .archive(memo.localId, !memo.archived),
+              ),
+              if (allowAttach)
+                IconButton(
+                  tooltip: '附件（仅本地工作区）',
+                  icon: const Icon(Icons.attach_file_rounded),
+                  onPressed: () => _attach(memo),
+                ),
+              IconButton(
+                tooltip: '历史版本',
+                icon: const Icon(Icons.history_rounded),
+                onPressed: () => _showHistory(memo),
+              ),
+              IconButton(
+                tooltip: '删除',
+                icon: const Icon(Icons.delete_outline_rounded),
+                onPressed: () async {
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('删除笔记？'),
+                      content: const Text('将从本地删除，并在联网后同步到服务器。'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('取消'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('删除'),
                         ),
                       ],
                     ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: _preview ? 'Edit' : 'Preview',
-                  icon: Icon(_preview ? Icons.edit : Icons.visibility),
-                  onPressed: () => setState(() => _preview = !_preview),
-                ),
-                IconButton(
-                  tooltip: memo.pinned ? 'Unpin' : 'Pin',
-                  icon: Icon(
-                    memo.pinned ? Icons.push_pin : Icons.push_pin_outlined,
-                  ),
-                  onPressed: () => ref
-                      .read(memoRepositoryProvider)
-                      .pin(memo.localId, !memo.pinned),
-                ),
-                IconButton(
-                  tooltip: memo.archived ? 'Unarchive' : 'Archive',
-                  icon: Icon(
-                    memo.archived ? Icons.unarchive : Icons.archive_outlined,
-                  ),
-                  onPressed: () => ref
-                      .read(memoRepositoryProvider)
-                      .archive(memo.localId, !memo.archived),
-                ),
-                if (allowAttach)
-                  IconButton(
-                    tooltip: 'Attach file (local workspace)',
-                    icon: const Icon(Icons.attach_file),
-                    onPressed: () => _attach(memo),
-                  ),
-                IconButton(
-                  tooltip: 'History',
-                  icon: const Icon(Icons.history),
-                  onPressed: () => _showHistory(memo),
-                ),
-                IconButton(
-                  tooltip: 'Delete',
-                  icon: const Icon(Icons.delete_outline),
-                  onPressed: () async {
-                    final ok = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('Delete memo?'),
-                        content: const Text(
-                          'It will be removed locally and queued for server delete if synced.',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('Cancel'),
-                          ),
-                          FilledButton(
-                            onPressed: () => Navigator.pop(ctx, true),
-                            child: const Text('Delete'),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (ok == true) {
-                      _autosaveTimer?.cancel();
-                      await ref
-                          .read(memoRepositoryProvider)
-                          .softDelete(memo.localId);
-                      ref.read(selectedMemoIdProvider.notifier).state = null;
-                    }
-                  },
-                ),
-              ],
-            ),
+                  );
+                  if (ok == true) {
+                    _autosaveTimer?.cancel();
+                    await ref
+                        .read(memoRepositoryProvider)
+                        .softDelete(memo.localId);
+                    ref.read(selectedMemoIdProvider.notifier).state = null;
+                  }
+                },
+              ),
+            ],
           ),
         ),
-        const Divider(height: 1),
+        Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.5)),
         Expanded(
           child: _preview
               ? Markdown(
+                  controller: _scrollController,
                   data: _controller.text.isEmpty
-                      ? '*Empty*'
+                      ? '*空笔记 — 切换到编辑开始书写*'
                       : _controller.text,
                   selectable: true,
-                  padding: const EdgeInsets.all(16),
-                )
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
+                      .copyWith(
+                    p: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          height: 1.55,
+                        ),
+                    h1: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                    h2: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                    blockquoteDecoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest
+                          .withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border(
+                        left: BorderSide(color: scheme.primary, width: 3),
+                      ),
+                    ),
+                  ),
+                  )
               : TextField(
                   controller: _controller,
                   maxLines: null,
                   expands: true,
                   textAlignVertical: TextAlignVertical.top,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        height: 1.55,
+                        fontFamily: 'Menlo',
+                        fontFamilyFallback: const [
+                          'Monaco',
+                          'Consolas',
+                          'monospace',
+                        ],
+                        fontSize: 14.5,
+                      ),
                   decoration: const InputDecoration(
                     border: InputBorder.none,
-                    contentPadding: EdgeInsets.all(16),
-                    hintText: 'Write in Markdown… #tags supported',
+                    filled: false,
+                    contentPadding: EdgeInsets.fromLTRB(20, 16, 20, 24),
+                    hintText: '用 Markdown 书写… 支持 #标签\n停顿后自动保存并渲染预览',
                   ),
                   onChanged: (_) => _scheduleAutosave(memo),
                 ),
         ),
         if (memo.tags.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
             child: Wrap(
               spacing: 6,
+              runSpacing: 6,
               children: memo.tags
                   .map(
                     (String t) => ActionChip(
                       label: Text('#$t'),
+                      visualDensity: VisualDensity.compact,
                       onPressed: () {
                         ref.read(memoFilterProvider.notifier).state =
                             MemoQuery(tag: t);
@@ -326,19 +407,18 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
       final cont = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Large file'),
+          title: const Text('大文件'),
           content: Text(
-            'File is ${(file.size / (1024 * 1024)).toStringAsFixed(1)} MB '
-            '(limit warn ${AppConstants.attachmentWarnBytes ~/ (1024 * 1024)} MB). Continue?',
+            '文件约 ${(file.size / (1024 * 1024)).toStringAsFixed(1)} MB，是否继续？',
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
+              child: const Text('取消'),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Attach'),
+              child: const Text('附加'),
             ),
           ],
         ),
@@ -355,7 +435,7 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
         );
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Attached ${file.name}')),
+        SnackBar(content: Text('已附加 ${file.name}')),
       );
     }
   }
@@ -366,11 +446,12 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
+      showDragHandle: true,
       builder: (ctx) {
         if (items.isEmpty) {
           return const SizedBox(
             height: 160,
-            child: Center(child: Text('No history yet')),
+            child: Center(child: Text('暂无历史版本')),
           );
         }
         return ListView.builder(
@@ -391,7 +472,7 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
                       .restoreFromHistory(h.localId);
                   if (ctx.mounted) Navigator.pop(ctx);
                 },
-                child: const Text('Restore'),
+                child: const Text('恢复'),
               ),
             );
           },

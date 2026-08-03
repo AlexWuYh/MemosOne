@@ -24,24 +24,58 @@ class AuthRepositoryImpl implements AuthRepository {
       baseUrl: workspace.serverBaseUrl!,
       allowInsecureTls: workspace.allowInsecureTls,
     );
-    final token = await client.login(username: username, password: password);
+    final result = await client.login(username: username, password: password);
+    return _finalizeSession(
+      workspace: workspace,
+      token: result.accessToken,
+      preferredUsername: result.username ?? username,
+    );
+  }
+
+  @override
+  Future<AuthSession> loginWithAccessToken({
+    required Workspace workspace,
+    required String accessToken,
+  }) async {
+    final token = accessToken.trim();
+    if (token.isEmpty) {
+      throw const ValidationFailure('Access token is required');
+    }
+    if (workspace.serverBaseUrl == null || workspace.serverBaseUrl!.isEmpty) {
+      throw const ValidationFailure('Server URL is required');
+    }
+    return _finalizeSession(
+      workspace: workspace,
+      token: token,
+      preferredUsername: workspace.username,
+    );
+  }
+
+  Future<AuthSession> _finalizeSession({
+    required Workspace workspace,
+    required String token,
+    String? preferredUsername,
+  }) async {
     await _tokens.write(workspace.localId, token);
     final authed = MemosApiClient(
       baseUrl: workspace.serverBaseUrl!,
       accessToken: token,
       allowInsecureTls: workspace.allowInsecureTls,
     );
-    String? displayName = username;
+    String? displayName = preferredUsername;
     String? resource;
     try {
       final me = await authed.getCurrentUser();
       displayName = me['username'] as String? ??
-          me['name'] as String? ??
           me['displayName'] as String? ??
-          username;
+          me['nickname'] as String? ??
+          (me['name'] is String && !(me['name'] as String).startsWith('users/')
+              ? me['name'] as String
+              : null) ??
+          preferredUsername;
       resource = me['name'] as String?;
     } catch (_) {
-      // Some servers may not expose /users/me; keep login success.
+      // Token may still be valid for memo APIs.
     }
     await _workspaces.update(
       workspace.copyWith(

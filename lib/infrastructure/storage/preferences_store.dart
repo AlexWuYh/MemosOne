@@ -13,6 +13,12 @@ class PreferencesStore {
   static const _windowHeightKey = 'window_height';
   static const _windowXKey = 'window_x';
   static const _windowYKey = 'window_y';
+  static const _onboardingDoneKey = 'onboarding_done';
+  static const _syncOnLaunchKey = 'sync_on_launch';
+  static const _syncOnExitKey = 'sync_on_exit';
+  static const _syncOnReconnectKey = 'sync_on_reconnect';
+  static const _periodicSyncKey = 'periodic_sync';
+  static const _syncIntervalMinKey = 'sync_interval_minutes';
 
   String? get activeWorkspaceId => _prefs.getString(_activeWorkspaceKey);
 
@@ -23,6 +29,43 @@ class PreferencesStore {
       await _prefs.setString(_activeWorkspaceKey, id);
     }
   }
+
+  bool get onboardingDone => _prefs.getBool(_onboardingDoneKey) ?? false;
+
+  Future<void> setOnboardingDone(bool value) =>
+      _prefs.setBool(_onboardingDoneKey, value);
+
+  /// Sync when app becomes ready / resumes (default on).
+  bool get syncOnLaunch => _prefs.getBool(_syncOnLaunchKey) ?? true;
+
+  Future<void> setSyncOnLaunch(bool v) => _prefs.setBool(_syncOnLaunchKey, v);
+
+  /// Sync when window closes / app exits (default on).
+  bool get syncOnExit => _prefs.getBool(_syncOnExitKey) ?? true;
+
+  Future<void> setSyncOnExit(bool v) => _prefs.setBool(_syncOnExitKey, v);
+
+  /// Sync when network reconnects (default on).
+  bool get syncOnReconnect => _prefs.getBool(_syncOnReconnectKey) ?? true;
+
+  Future<void> setSyncOnReconnect(bool v) =>
+      _prefs.setBool(_syncOnReconnectKey, v);
+
+  /// Background periodic full sync (default on).
+  bool get periodicSyncEnabled => _prefs.getBool(_periodicSyncKey) ?? true;
+
+  Future<void> setPeriodicSyncEnabled(bool v) =>
+      _prefs.setBool(_periodicSyncKey, v);
+
+  /// Minutes between full pulls when periodic sync is on (default 15).
+  int get syncIntervalMinutes {
+    final v = _prefs.getInt(_syncIntervalMinKey);
+    if (v == null || v < 1) return 15;
+    return v;
+  }
+
+  Future<void> setSyncIntervalMinutes(int minutes) =>
+      _prefs.setInt(_syncIntervalMinKey, minutes.clamp(1, 24 * 60));
 
   ThemeMode get themeMode {
     final raw = _prefs.getString(_themeModeKey);
@@ -38,7 +81,8 @@ class PreferencesStore {
 
   Color get accentColor {
     final value = _prefs.getInt(_accentKey);
-    if (value == null) return const Color(0xFF4F46E5);
+    // Warm indigo — closer to notes / Memos calm aesthetic
+    if (value == null) return const Color(0xFF5B6CFF);
     return Color(value);
   }
 

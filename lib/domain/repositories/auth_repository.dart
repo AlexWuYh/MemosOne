@@ -19,6 +19,12 @@ abstract class AuthRepository {
     required String password,
   });
 
+  /// Paste an access token from Memos settings (when password API differs).
+  Future<AuthSession> loginWithAccessToken({
+    required Workspace workspace,
+    required String accessToken,
+  });
+
   Future<void> logout(Workspace workspace);
 
   Future<String?> readToken(String workspaceId);

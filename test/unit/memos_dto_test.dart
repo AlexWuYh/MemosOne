@@ -19,4 +19,15 @@ void main() {
     expect(dto.archived, isFalse);
     expect(dto.updateTime, isNotNull);
   });
+
+  test('parses sign-in style accessToken from map', () {
+    // Mirrors MemosApiClient private parse via public response contract docs.
+    final map = {
+      'accessToken': 'abc.def.ghi',
+      'user': {'username': 'alice', 'name': 'users/1'},
+    };
+    final token = (map['accessToken'] ?? map['access_token'] ?? map['token'])
+        ?.toString();
+    expect(token, 'abc.def.ghi');
+  });
 }

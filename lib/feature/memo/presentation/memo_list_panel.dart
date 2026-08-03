@@ -64,33 +64,33 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
     final search = ref.watch(searchQueryProvider);
     final filter = ref.watch(memoFilterProvider);
     final searchFocus = ref.watch(searchFocusNodeProvider);
+    final scheme = Theme.of(context).colorScheme;
 
-    // Keep field in sync when cleared externally.
     if (search.isEmpty && _searchController.text.isNotEmpty) {
       _searchController.clear();
     }
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
           child: TextField(
             focusNode: searchFocus,
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Search memos…',
-              prefixIcon: const Icon(Icons.search),
+              hintText: '搜索笔记…',
+              prefixIcon: const Icon(Icons.search_rounded),
               suffixIcon: search.isEmpty && _searchController.text.isEmpty
                   ? null
                   : IconButton(
-                      icon: const Icon(Icons.clear),
+                      icon: const Icon(Icons.close_rounded),
                       onPressed: () {
                         _debounce?.cancel();
                         _searchController.clear();
                         ref.read(searchQueryProvider.notifier).state = '';
                       },
                     ),
-              border: const OutlineInputBorder(),
               isDense: true,
             ),
             onChanged: _onSearchChanged,
@@ -98,89 +98,162 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
         ),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
           child: Row(
             children: [
-              FilterChip(
-                label: const Text('Active'),
+              _FilterPill(
+                label: '全部',
                 selected: !filter.onlyArchived && !filter.onlyPinned,
-                onSelected: (_) {
-                  ref.read(memoFilterProvider.notifier).state =
-                      const MemoQuery();
-                },
+                onTap: () => ref.read(memoFilterProvider.notifier).state =
+                    const MemoQuery(),
               ),
               const SizedBox(width: 8),
-              FilterChip(
-                label: const Text('Pinned'),
+              _FilterPill(
+                label: '置顶',
                 selected: filter.onlyPinned,
-                onSelected: (_) {
-                  ref.read(memoFilterProvider.notifier).state =
-                      const MemoQuery(onlyPinned: true);
-                },
+                onTap: () => ref.read(memoFilterProvider.notifier).state =
+                    const MemoQuery(onlyPinned: true),
               ),
               const SizedBox(width: 8),
-              FilterChip(
-                label: const Text('Archived'),
+              _FilterPill(
+                label: '归档',
                 selected: filter.onlyArchived,
-                onSelected: (_) {
-                  ref.read(memoFilterProvider.notifier).state =
-                      const MemoQuery(onlyArchived: true);
-                },
+                onTap: () => ref.read(memoFilterProvider.notifier).state =
+                    const MemoQuery(onlyArchived: true),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         Expanded(
           child: memosAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text('Error: $e')),
+            error: (e, _) => Center(child: Text('错误: $e')),
             data: (memos) {
               if (memos.isEmpty) {
                 return Center(
                   child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      search.isEmpty
-                          ? 'No memos yet.\nTap + to create one.'
-                          : 'No matches.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyLarge,
+                    padding: const EdgeInsets.all(28),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.edit_note_rounded,
+                          size: 48,
+                          color: scheme.outline,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          search.isEmpty ? '还没有笔记' : '没有匹配结果',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          search.isEmpty ? '点击右上角 + 快速记录' : '试试其他关键词',
+                          style: TextStyle(color: scheme.onSurfaceVariant),
+                        ),
+                      ],
                     ),
                   ),
                 );
               }
               return ListView.separated(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
                 itemCount: memos.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
                   final memo = memos[index];
                   final selected = memo.localId == selectedId;
-                  return ListTile(
-                    selected: selected,
-                    leading: Icon(
-                      memo.pinned ? Icons.push_pin : Icons.notes_outlined,
-                      size: 20,
+                  return Material(
+                    color: selected
+                        ? scheme.primaryContainer.withValues(alpha: 0.55)
+                        : scheme.surface,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      side: BorderSide(
+                        color: selected
+                            ? scheme.primary.withValues(alpha: 0.35)
+                            : scheme.outlineVariant.withValues(alpha: 0.45),
+                      ),
                     ),
-                    title: Text(
-                      memo.snippet,
-                      maxLines: widget.compact ? 2 : 3,
-                      overflow: TextOverflow.ellipsis,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () {
+                        ref.read(selectedMemoIdProvider.notifier).state =
+                            memo.localId;
+                        widget.onSelect?.call(memo);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                if (memo.pinned)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 6),
+                                    child: Icon(
+                                      Icons.push_pin_rounded,
+                                      size: 14,
+                                      color: scheme.primary,
+                                    ),
+                                  ),
+                                Expanded(
+                                  child: Text(
+                                    memo.snippet,
+                                    maxLines: widget.compact ? 2 : 3,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyLarge
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w500,
+                                          height: 1.35,
+                                        ),
+                                  ),
+                                ),
+                                if (memo.dirty)
+                                  Container(
+                                    margin: const EdgeInsets.only(left: 8),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 7,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: scheme.tertiaryContainer,
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      '待同步',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: scheme.onTertiaryContainer,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              DateFormat('yyyy/MM/dd HH:mm')
+                                      .format(memo.updatedAtLocal) +
+                                  (memo.tags.isEmpty
+                                      ? ''
+                                      : '  ·  ${memo.tags.map((t) => '#$t').join(' ')}'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelMedium
+                                  ?.copyWith(color: scheme.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                    subtitle: Text(
-                      DateFormat.yMMMd().add_Hm().format(memo.updatedAtLocal) +
-                          (memo.dirty ? ' · pending sync' : '') +
-                          (memo.tags.isEmpty
-                              ? ''
-                              : ' · ${memo.tags.map((String t) => '#$t').join(' ')}'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    onTap: () {
-                      ref.read(selectedMemoIdProvider.notifier).state =
-                          memo.localId;
-                      widget.onSelect?.call(memo);
-                    },
                   );
                 },
               );
@@ -188,6 +261,33 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _FilterPill extends StatelessWidget {
+  const _FilterPill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onTap(),
+      selectedColor: scheme.primaryContainer,
+      labelStyle: TextStyle(
+        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+        color: selected ? scheme.onPrimaryContainer : scheme.onSurface,
+      ),
     );
   }
 }

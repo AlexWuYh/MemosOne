@@ -7,8 +7,8 @@ abstract final class AppConstants {
   /// How often the worker wakes to drain the push queue.
   static const int syncPollSeconds = 5;
 
-  /// Full list+delete-reconcile pull interval (manual Sync now always full-pulls).
-  static const int fullPullIntervalMinutes = 30;
+  /// Default full list+delete-reconcile pull interval (overridable in Settings).
+  static const int fullPullIntervalMinutes = 15;
 
   static const int maxSyncRetries = 12;
   static const int searchDebounceMs = 250;

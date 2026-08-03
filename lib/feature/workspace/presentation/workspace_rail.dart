@@ -15,18 +15,21 @@ class WorkspaceRail extends ConsumerWidget {
     final workspaces = ref.watch(workspacesProvider);
     final active = ref.watch(activeWorkspaceProvider);
     final sync = ref.watch(syncStatusProvider).valueOrNull;
+    final scheme = Theme.of(context).colorScheme;
 
     return Material(
-      color: Theme.of(context).colorScheme.surfaceContainerLowest,
+      color: scheme.surfaceContainerLowest,
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
               child: Text(
-                'Workspaces',
-                style: Theme.of(context).textTheme.titleMedium,
+                '工作区',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
               ),
             ),
             Expanded(
@@ -40,45 +43,65 @@ class WorkspaceRail extends ConsumerWidget {
                       child: Padding(
                         padding: EdgeInsets.all(16),
                         child: Text(
-                          'Create a local or Memos workspace to begin.',
+                          '连接 Memos 后，笔记会缓存在本地并可离线编辑。',
                           textAlign: TextAlign.center,
                         ),
                       ),
                     );
                   }
                   return ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                     itemCount: list.length,
                     itemBuilder: (context, i) {
                       final ws = list[i];
                       final selected = ws.localId == active?.localId;
-                      return ListTile(
-                        selected: selected,
-                        leading: Icon(
-                          ws.isLocal
-                              ? Icons.folder_outlined
-                              : Icons.cloud_outlined,
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: ListTile(
+                          selected: selected,
+                          selectedTileColor:
+                              scheme.primaryContainer.withValues(alpha: 0.45),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          leading: Icon(
+                            ws.isLocal
+                                ? Icons.folder_outlined
+                                : Icons.cloud_outlined,
+                          ),
+                          title: Text(
+                            ws.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text(
+                            ws.isLocal
+                                ? '仅本地'
+                                : (ws.username ?? ws.serverBaseUrl ?? 'Memos'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onTap: () async {
+                            await ref
+                                .read(activeWorkspaceIdProvider.notifier)
+                                .select(ws.localId);
+                            await ref
+                                .read(workspaceRepositoryProvider)
+                                .markOpened(ws.localId);
+                            ref.read(selectedMemoIdProvider.notifier).state =
+                                null;
+                            if (ws.isMemos) {
+                              await ref.read(syncServiceProvider).start(ws);
+                              final prefs = ref.read(syncPrefsProvider);
+                              if (prefs.syncOnLaunch &&
+                                  ws.authState == WorkspaceAuthState.ok) {
+                                await ref
+                                    .read(syncServiceProvider)
+                                    .syncNow(ws);
+                              }
+                            }
+                          },
                         ),
-                        title: Text(ws.name),
-                        subtitle: Text(
-                          ws.isLocal
-                              ? 'Local'
-                              : (ws.username ?? ws.serverBaseUrl ?? 'Memos'),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        onTap: () async {
-                          await ref
-                              .read(activeWorkspaceIdProvider.notifier)
-                              .select(ws.localId);
-                          await ref
-                              .read(workspaceRepositoryProvider)
-                              .markOpened(ws.localId);
-                          ref.read(selectedMemoIdProvider.notifier).state =
-                              null;
-                          if (ws.isMemos) {
-                            await ref.read(syncServiceProvider).start(ws);
-                          }
-                        },
                       );
                     },
                   );
@@ -92,20 +115,20 @@ class WorkspaceRail extends ConsumerWidget {
               ),
             const Divider(),
             ListTile(
-              leading: const Icon(Icons.add),
-              title: const Text('New workspace'),
+              leading: const Icon(Icons.add_rounded),
+              title: const Text('添加工作区'),
               onTap: () => showCreateWorkspaceDialog(context, ref),
             ),
             if (active?.isMemos == true &&
                 active?.authState != WorkspaceAuthState.ok)
               ListTile(
-                leading: const Icon(Icons.login),
-                title: const Text('Sign in'),
+                leading: const Icon(Icons.login_rounded),
+                title: const Text('登录'),
                 onTap: () => showLoginDialog(context, ref, active!),
               ),
             ListTile(
               leading: const Icon(Icons.settings_outlined),
-              title: const Text('Settings'),
+              title: const Text('设置'),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => const SettingsPage(),
@@ -129,41 +152,38 @@ class _SyncBadge extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final s = snapshot ?? const SyncStatusSnapshot.idle();
+    final scheme = Theme.of(context).colorScheme;
     final (icon, label, color) = switch (s.state) {
       GlobalSyncState.syncing => (
-          Icons.sync,
-          'Syncing…',
-          Theme.of(context).colorScheme.primary
+          Icons.sync_rounded,
+          '同步中…',
+          scheme.primary
         ),
       GlobalSyncState.offline => (
-          Icons.cloud_off,
-          'Offline',
-          Theme.of(context).colorScheme.outline
+          Icons.cloud_off_rounded,
+          '离线可编辑',
+          scheme.outline
         ),
       GlobalSyncState.authRequired => (
           Icons.lock_outline,
-          'Re-login required',
-          Theme.of(context).colorScheme.error
+          '需要重新登录',
+          scheme.error
         ),
       GlobalSyncState.error => (
           Icons.error_outline,
-          s.lastError ?? 'Sync error',
-          Theme.of(context).colorScheme.error
+          s.lastError ?? '同步错误',
+          scheme.error
         ),
       GlobalSyncState.idle => (
           Icons.cloud_done_outlined,
-          s.pendingCount > 0
-              ? '${s.pendingCount} pending'
-              : 'Synced',
-          Theme.of(context).colorScheme.primary
+          s.pendingCount > 0 ? '${s.pendingCount} 条待同步' : '已与云端同步',
+          scheme.primary
         ),
     };
     final last = s.lastPullAt;
-    final lastLine = last == null
-        ? 'Last full pull: never'
-        : 'Last full pull: ${_ago(last)}';
-    final deadLine =
-        s.deadCount > 0 ? ' · ${s.deadCount} dead' : '';
+    final lastLine =
+        last == null ? '尚未完成全量同步' : '上次同步 ${_ago(last)}';
+    final deadLine = s.deadCount > 0 ? ' · ${s.deadCount} 失败' : '';
     return Card(
       child: ListTile(
         dense: true,
@@ -175,8 +195,8 @@ class _SyncBadge extends ConsumerWidget {
           overflow: TextOverflow.ellipsis,
         ),
         trailing: IconButton(
-          tooltip: 'Sync now (full pull)',
-          icon: const Icon(Icons.refresh),
+          tooltip: '立即同步',
+          icon: const Icon(Icons.refresh_rounded),
           onPressed: () =>
               ref.read(syncServiceProvider).syncNow(workspace),
         ),
@@ -186,9 +206,9 @@ class _SyncBadge extends ConsumerWidget {
 
   String _ago(DateTime t) {
     final d = DateTime.now().difference(t);
-    if (d.inSeconds < 60) return 'just now';
-    if (d.inMinutes < 60) return '${d.inMinutes}m ago';
-    if (d.inHours < 24) return '${d.inHours}h ago';
-    return '${d.inDays}d ago';
+    if (d.inSeconds < 60) return '刚刚';
+    if (d.inMinutes < 60) return '${d.inMinutes} 分钟前';
+    if (d.inHours < 24) return '${d.inHours} 小时前';
+    return '${d.inDays} 天前';
   }
 }

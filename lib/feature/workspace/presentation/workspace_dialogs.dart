@@ -25,9 +25,9 @@ class _CreateWorkspaceDialog extends ConsumerStatefulWidget {
 
 class _CreateWorkspaceDialogState
     extends ConsumerState<_CreateWorkspaceDialog> {
-  final _name = TextEditingController(text: 'My Notes');
+  final _name = TextEditingController(text: 'My Memos');
   final _url = TextEditingController();
-  var _type = WorkspaceType.local;
+  var _type = WorkspaceType.memos;
   var _insecure = false;
   var _busy = false;
   String? _error;
@@ -52,7 +52,7 @@ class _CreateWorkspaceDialogState
       } else {
         final url = _url.text.trim();
         if (url.isEmpty || !url.startsWith('http')) {
-          throw const ValidationFailure('Enter a valid server URL (https://…)');
+          throw const ValidationFailure('请输入有效的服务器地址（https://…）');
         }
         ws = await repo.createMemos(
           name: _name.text,
@@ -66,7 +66,7 @@ class _CreateWorkspaceDialogState
         await showLoginDialog(context, ref, ws);
       }
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = e is AppFailure ? e.message : e.toString());
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -75,7 +75,7 @@ class _CreateWorkspaceDialogState
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('New workspace'),
+      title: const Text('新建工作区'),
       content: SizedBox(
         width: 420,
         child: Column(
@@ -83,20 +83,20 @@ class _CreateWorkspaceDialogState
           children: [
             TextField(
               controller: _name,
-              decoration: const InputDecoration(labelText: 'Name'),
+              decoration: const InputDecoration(labelText: '名称'),
             ),
             const SizedBox(height: 12),
             SegmentedButton<WorkspaceType>(
               segments: const [
                 ButtonSegment(
-                  value: WorkspaceType.local,
-                  label: Text('Local'),
-                  icon: Icon(Icons.folder_outlined),
+                  value: WorkspaceType.memos,
+                  label: Text('Memos 云端'),
+                  icon: Icon(Icons.cloud_outlined),
                 ),
                 ButtonSegment(
-                  value: WorkspaceType.memos,
-                  label: Text('Memos'),
-                  icon: Icon(Icons.cloud_outlined),
+                  value: WorkspaceType.local,
+                  label: Text('仅本地'),
+                  icon: Icon(Icons.folder_outlined),
                 ),
               ],
               selected: {_type},
@@ -107,23 +107,23 @@ class _CreateWorkspaceDialogState
               TextField(
                 controller: _url,
                 decoration: const InputDecoration(
-                  labelText: 'Server URL',
+                  labelText: '服务器 URL',
                   hintText: 'https://memos.example.com',
                 ),
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Allow insecure TLS'),
-                subtitle: const Text(
-                  'Only for trusted LAN self-signed certs. Default off.',
-                ),
+                title: const Text('允许不安全 TLS'),
                 value: _insecure,
                 onChanged: (v) => setState(() => _insecure = v),
               ),
             ],
             if (_error != null) ...[
               const SizedBox(height: 8),
-              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
             ],
           ],
         ),
@@ -131,7 +131,7 @@ class _CreateWorkspaceDialogState
       actions: [
         TextButton(
           onPressed: _busy ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: const Text('取消'),
         ),
         FilledButton(
           onPressed: _busy ? null : _submit,
@@ -141,7 +141,7 @@ class _CreateWorkspaceDialogState
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Create'),
+              : const Text('创建'),
         ),
       ],
     );
@@ -171,6 +171,8 @@ class _LoginDialog extends ConsumerStatefulWidget {
 class _LoginDialogState extends ConsumerState<_LoginDialog> {
   final _user = TextEditingController();
   final _pass = TextEditingController();
+  final _token = TextEditingController();
+  var _useToken = false;
   var _busy = false;
   String? _error;
 
@@ -178,6 +180,7 @@ class _LoginDialogState extends ConsumerState<_LoginDialog> {
   void dispose() {
     _user.dispose();
     _pass.dispose();
+    _token.dispose();
     super.dispose();
   }
 
@@ -187,13 +190,23 @@ class _LoginDialogState extends ConsumerState<_LoginDialog> {
       _error = null;
     });
     try {
-      await ref.read(authRepositoryProvider).login(
-            workspace: widget.workspace,
-            username: _user.text.trim(),
-            password: _pass.text,
-          );
+      if (_useToken) {
+        await ref.read(authRepositoryProvider).loginWithAccessToken(
+              workspace: widget.workspace,
+              accessToken: _token.text,
+            );
+      } else {
+        await ref.read(authRepositoryProvider).login(
+              workspace: widget.workspace,
+              username: _user.text.trim(),
+              password: _pass.text,
+            );
+      }
       ref.read(syncWorkerProvider).clearAuthBlock(widget.workspace.localId);
-      await ref.read(syncServiceProvider).syncNow(widget.workspace);
+      final latest = await ref
+          .read(workspaceRepositoryProvider)
+          .get(widget.workspace.localId);
+      await ref.read(syncServiceProvider).syncNow(latest ?? widget.workspace);
       if (mounted) Navigator.pop(context);
     } catch (e) {
       setState(() => _error = e is AppFailure ? e.message : e.toString());
@@ -205,9 +218,9 @@ class _LoginDialogState extends ConsumerState<_LoginDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('Sign in · ${widget.workspace.name}'),
+      title: Text('登录 · ${widget.workspace.name}'),
       content: SizedBox(
-        width: 360,
+        width: 380,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -215,25 +228,44 @@ class _LoginDialogState extends ConsumerState<_LoginDialog> {
               widget.workspace.serverBaseUrl ?? '',
               style: Theme.of(context).textTheme.bodySmall,
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _user,
-              decoration: const InputDecoration(labelText: 'Username'),
-              autofillHints: const [AutofillHints.username],
-            ),
             const SizedBox(height: 8),
-            TextField(
-              controller: _pass,
-              decoration: const InputDecoration(labelText: 'Password'),
-              obscureText: true,
-              autofillHints: const [AutofillHints.password],
-              onSubmitted: (_) => _submit(),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('使用 Access Token'),
+              value: _useToken,
+              onChanged: (v) => setState(() => _useToken = v),
             ),
+            if (_useToken)
+              TextField(
+                controller: _token,
+                decoration: const InputDecoration(
+                  labelText: 'Access Token',
+                ),
+                obscureText: true,
+              )
+            else ...[
+              TextField(
+                controller: _user,
+                decoration: const InputDecoration(labelText: '用户名'),
+                autofillHints: const [AutofillHints.username],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _pass,
+                decoration: const InputDecoration(labelText: '密码'),
+                obscureText: true,
+                autofillHints: const [AutofillHints.password],
+                onSubmitted: (_) => _submit(),
+              ),
+            ],
             if (_error != null) ...[
               const SizedBox(height: 8),
               Text(
                 _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  height: 1.35,
+                ),
               ),
             ],
           ],
@@ -242,7 +274,7 @@ class _LoginDialogState extends ConsumerState<_LoginDialog> {
       actions: [
         TextButton(
           onPressed: _busy ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: const Text('取消'),
         ),
         FilledButton(
           onPressed: _busy ? null : _submit,
@@ -252,7 +284,7 @@ class _LoginDialogState extends ConsumerState<_LoginDialog> {
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Sign in'),
+              : const Text('登录并同步'),
         ),
       ],
     );

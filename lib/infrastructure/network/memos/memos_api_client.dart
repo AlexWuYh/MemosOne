@@ -32,11 +32,10 @@ class RemoteMemoDto {
   factory RemoteMemoDto.fromJson(Map<String, dynamic> json) {
     final visibilityRaw =
         (json['visibility'] as String? ?? 'PRIVATE').toUpperCase();
-    final stateRaw = (json['state'] as String? ?? json['rowStatus'] as String? ?? '')
-        .toUpperCase();
-    final pinned = json['pinned'] == true ||
-        json['pinned'] == 1 ||
-        (json['displayTime'] != null && json['pinned'] == true);
+    final stateRaw =
+        (json['state'] as String? ?? json['rowStatus'] as String? ?? '')
+            .toUpperCase();
+    final pinned = json['pinned'] == true || json['pinned'] == 1;
 
     return RemoteMemoDto(
       name: json['name'] as String? ??
@@ -55,27 +54,9 @@ class RemoteMemoDto {
     );
   }
 
-  Map<String, dynamic> toCreateBody() {
-    return {
-      'content': content,
-      'visibility': visibility.name.toUpperCase(),
-    };
-  }
-
-  Map<String, dynamic> toUpdateBody() {
-    return {
-      'name': name,
-      'content': content,
-      'visibility': visibility.name.toUpperCase(),
-      'pinned': pinned,
-      if (archived) 'state': 'ARCHIVED' else 'state': 'NORMAL',
-    };
-  }
-
   static DateTime? _parseTime(Object? value) {
     if (value == null) return null;
     if (value is int) {
-      // seconds or millis
       if (value > 100000000000) {
         return DateTime.fromMillisecondsSinceEpoch(value, isUtc: true).toLocal();
       }
@@ -87,6 +68,18 @@ class RemoteMemoDto {
     }
     return null;
   }
+}
+
+class MemosSignInResult {
+  const MemosSignInResult({
+    required this.accessToken,
+    this.expiresAt,
+    this.username,
+  });
+
+  final String accessToken;
+  final DateTime? expiresAt;
+  final String? username;
 }
 
 class MemosApiClient {
@@ -105,6 +98,9 @@ class MemosApiClient {
                   'Accept': 'application/json',
                   'Content-Type': 'application/json',
                 },
+                // Keep cookies for refresh-token flows when server sets them.
+                // Access token is still primary for Authorization header.
+                validateStatus: (s) => s != null && s < 500,
               ),
             ) {
     if (accessToken != null && accessToken!.isNotEmpty) {
@@ -154,104 +150,161 @@ class MemosApiClient {
     );
   }
 
-  Future<String> login({
+  /// Current Memos API v1 SignIn body shape:
+  /// `{ "passwordCredentials": { "username", "password" } }`
+  /// Response: `{ "accessToken" | "access_token", "user": {...} }`
+  Future<MemosSignInResult> login({
     required String username,
     required String password,
   }) async {
     try {
-      // Try modern auth endpoint variants.
-      final attempts = <Future<Response<dynamic>> Function()>[
-        () => _dio.post(
-              '/api/v1/auth/signin',
-              data: {
-                'username': username,
-                'password': password,
-              },
-            ),
-        () => _dio.post(
-              '/api/v1/users/sessions',
-              data: {
-                'username': username,
-                'password': password,
-              },
-            ),
-        () => _dio.post(
-              '/api/v1/auth/login',
-              data: {
-                'username': username,
-                'password': password,
-              },
-            ),
+      final attempts = <MapEntry<String, Map<String, dynamic>>>[
+        MapEntry('/api/v1/auth/signin', {
+          'passwordCredentials': {
+            'username': username,
+            'password': password,
+          },
+        }),
+        // snake_case variant some gateways emit
+        MapEntry('/api/v1/auth/signin', {
+          'password_credentials': {
+            'username': username,
+            'password': password,
+          },
+        }),
+        // Legacy flat body (older deployments)
+        MapEntry('/api/v1/auth/signin', {
+          'username': username,
+          'password': password,
+        }),
+        MapEntry('/api/v1/auth/login', {
+          'username': username,
+          'password': password,
+        }),
       ];
 
-      DioException? last;
+      DioException? lastNetwork;
+      Object? lastBody;
+      int? lastStatus;
+
       for (final attempt in attempts) {
         try {
-          final res = await attempt();
-          final data = res.data;
-          if (data is Map) {
-            final token = data['accessToken'] as String? ??
-                data['token'] as String? ??
-                data['access_token'] as String?;
-            // Only accept explicit access tokens — never store Set-Cookie as Bearer.
-            if (token != null &&
-                token.isNotEmpty &&
-                !token.toLowerCase().startsWith('memos_session=')) {
-              return token;
-            }
+          final res = await _dio.post<dynamic>(
+            attempt.key,
+            data: attempt.value,
+          );
+          lastStatus = res.statusCode;
+          lastBody = res.data;
+          if (res.statusCode != null &&
+              res.statusCode! >= 200 &&
+              res.statusCode! < 300) {
+            final parsed = _parseSignInBody(res.data);
+            if (parsed != null) return parsed;
+          }
+          // 4xx with message → stop early on auth errors for primary shape
+          if (res.statusCode == 401 || res.statusCode == 403) {
+            throw AuthFailure(_extractErrorMessage(res.data) ?? 'Unauthorized');
           }
         } on DioException catch (e) {
-          last = e;
+          lastNetwork = e;
+          lastStatus = e.response?.statusCode;
+          lastBody = e.response?.data;
           if (e.response?.statusCode == 404) continue;
+          if (e.response?.statusCode == 400 ||
+              e.response?.statusCode == 401 ||
+              e.response?.statusCode == 403) {
+            // try next body shape for 400 (wrong field mask)
+            if (e.response?.statusCode == 400) continue;
+            throw AuthFailure(
+              _extractErrorMessage(e.response?.data) ?? 'Login failed',
+              cause: e,
+            );
+          }
         }
       }
+
       throw AuthFailure(
-        'Login failed: no access token in response. '
-        'Cookie-only sessions are not supported; use API token auth.',
-        cause: last,
+        'Login failed (HTTP ${lastStatus ?? '?'}): '
+        '${_extractErrorMessage(lastBody) ?? 'no access token in response'}. '
+        'Ensure server is Memos API v1 and password auth is enabled.',
+        cause: lastNetwork,
       );
+    } on AuthFailure {
+      rethrow;
     } on DioException catch (e) {
       throw _mapDio(e, 'Login failed');
     }
   }
 
-  Future<Map<String, dynamic>> getCurrentUser() async {
-    try {
-      final res = await _dio.get<Map<String, dynamic>>('/api/v1/users/me');
-      return res.data ?? {};
-    } on DioException {
-      // Fallback older path
-      try {
-        final res = await _dio.get<Map<String, dynamic>>('/api/v1/user/me');
-        return res.data ?? {};
-      } on DioException catch (e2) {
-        throw _mapDio(e2, 'Failed to load user');
+  MemosSignInResult? _parseSignInBody(Object? data) {
+    if (data is! Map) return null;
+    final map = Map<String, dynamic>.from(data);
+    final token = (map['accessToken'] ??
+            map['access_token'] ??
+            map['token'])
+        ?.toString();
+    if (token == null || token.isEmpty) return null;
+    if (token.toLowerCase().startsWith('memos_session=')) return null;
+
+    DateTime? expires;
+    final exp = map['accessTokenExpiresAt'] ??
+        map['access_token_expires_at'] ??
+        map['expiresAt'];
+    if (exp is String) expires = DateTime.tryParse(exp)?.toLocal();
+    if (exp is Map && exp['seconds'] != null) {
+      final sec = int.tryParse(exp['seconds'].toString());
+      if (sec != null) {
+        expires = DateTime.fromMillisecondsSinceEpoch(sec * 1000, isUtc: true)
+            .toLocal();
       }
     }
+
+    String? username;
+    final user = map['user'];
+    if (user is Map) {
+      username = (user['username'] ?? user['name'])?.toString();
+    }
+
+    return MemosSignInResult(
+      accessToken: token,
+      expiresAt: expires,
+      username: username,
+    );
   }
 
-  Future<List<RemoteMemoDto>> listMemos({
-    String? pageToken,
-    int pageSize = 50,
-    String? filter,
-  }) async {
+  String? _extractErrorMessage(Object? data) {
+    if (data is Map) {
+      final m = Map<String, dynamic>.from(data);
+      return (m['message'] ?? m['error'] ?? m['msg'])?.toString();
+    }
+    if (data is String && data.isNotEmpty) return data;
+    return null;
+  }
+
+  Future<Map<String, dynamic>> getCurrentUser() async {
     try {
-      final res = await _dio.get<Map<String, dynamic>>(
-        '/api/v1/memos',
-        queryParameters: {
-          'pageSize': pageSize,
-          if (pageToken != null) 'pageToken': pageToken,
-          if (filter != null) 'filter': filter,
-        },
-      );
-      final list = (res.data?['memos'] as List?) ?? const [];
-      return list
-          .whereType<Map<dynamic, dynamic>>()
-          .map((e) => RemoteMemoDto.fromJson(Map<String, dynamic>.from(e)))
-          .where((e) => e.name.isNotEmpty)
-          .toList();
-    } on DioException catch (e) {
-      throw _mapDio(e, 'Failed to list memos');
+      final res = await _dio.get<Map<String, dynamic>>('/api/v1/auth/me');
+      if (res.statusCode == 200 && res.data != null) {
+        final data = res.data!;
+        if (data['user'] is Map) {
+          return Map<String, dynamic>.from(data['user'] as Map);
+        }
+        return data;
+      }
+    } on DioException {
+      // fall through
+    }
+    try {
+      final res = await _dio.get<Map<String, dynamic>>('/api/v1/users/me');
+      if (res.statusCode == 200) return res.data ?? {};
+    } on DioException {
+      // fall through
+    }
+    try {
+      final res = await _dio.get<Map<String, dynamic>>('/api/v1/user/me');
+      return res.data ?? {};
+    } on DioException catch (e2) {
+      throw _mapDio(e2, 'Failed to load user');
     }
   }
 
@@ -269,6 +322,12 @@ class MemosApiClient {
           if (filter != null) 'filter': filter,
         },
       );
+      if (res.statusCode != null && res.statusCode! >= 400) {
+        throw NetworkFailure(
+          _extractErrorMessage(res.data) ?? 'Failed to list memos',
+          statusCode: res.statusCode,
+        );
+      }
       final list = (res.data?['memos'] as List?) ?? const [];
       final memos = list
           .whereType<Map<dynamic, dynamic>>()
@@ -294,6 +353,12 @@ class MemosApiClient {
           'visibility': visibility.name.toUpperCase(),
         },
       );
+      if (res.statusCode != null && res.statusCode! >= 400) {
+        throw NetworkFailure(
+          _extractErrorMessage(res.data) ?? 'Failed to create memo',
+          statusCode: res.statusCode,
+        );
+      }
       return RemoteMemoDto.fromJson(res.data ?? {});
     } on DioException catch (e) {
       throw _mapDio(e, 'Failed to create memo');
@@ -321,33 +386,50 @@ class MemosApiClient {
           'updateMask': 'content,visibility,pinned,state',
         },
       );
-      return RemoteMemoDto.fromJson(res.data ?? {});
-    } on DioException {
-      // Alternate body shape
-      try {
-        final res = await _dio.patch<Map<String, dynamic>>(
-          '/api/v1/$name',
-          queryParameters: {
-            'updateMask': 'content,visibility,pinned,state',
-          },
-          data: {
-            'name': name,
-            'content': content,
-            'visibility': visibility.name.toUpperCase(),
-            'pinned': pinned,
-            'state': archived ? 'ARCHIVED' : 'NORMAL',
-          },
-        );
+      if (res.statusCode != null &&
+          res.statusCode! >= 200 &&
+          res.statusCode! < 300) {
         return RemoteMemoDto.fromJson(res.data ?? {});
-      } on DioException catch (e2) {
-        throw _mapDio(e2, 'Failed to update memo');
       }
+    } on DioException {
+      // try alternate
+    }
+    try {
+      final res = await _dio.patch<Map<String, dynamic>>(
+        '/api/v1/$name',
+        queryParameters: {
+          'updateMask': 'content,visibility,pinned,state',
+        },
+        data: {
+          'name': name,
+          'content': content,
+          'visibility': visibility.name.toUpperCase(),
+          'pinned': pinned,
+          'state': archived ? 'ARCHIVED' : 'NORMAL',
+        },
+      );
+      if (res.statusCode != null && res.statusCode! >= 400) {
+        throw NetworkFailure(
+          _extractErrorMessage(res.data) ?? 'Failed to update memo',
+          statusCode: res.statusCode,
+        );
+      }
+      return RemoteMemoDto.fromJson(res.data ?? {});
+    } on DioException catch (e2) {
+      throw _mapDio(e2, 'Failed to update memo');
     }
   }
 
   Future<void> deleteMemo(String name) async {
     try {
-      await _dio.delete<void>('/api/v1/$name');
+      final res = await _dio.delete<void>('/api/v1/$name');
+      if (res.statusCode == 404) return;
+      if (res.statusCode != null && res.statusCode! >= 400) {
+        throw NetworkFailure(
+          'Failed to delete memo',
+          statusCode: res.statusCode,
+        );
+      }
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) return;
       throw _mapDio(e, 'Failed to delete memo');
@@ -356,12 +438,7 @@ class MemosApiClient {
 
   AppFailure _mapDio(DioException e, String fallback) {
     final code = e.response?.statusCode;
-    final data = e.response?.data;
-    String msg = fallback;
-    if (data is Map) {
-      final map = Map<Object?, Object?>.from(data);
-      msg = (map['message'] ?? map['error'] ?? fallback).toString();
-    }
+    final msg = _extractErrorMessage(e.response?.data) ?? fallback;
     if (code == 401) {
       return AuthFailure(msg, cause: e);
     }

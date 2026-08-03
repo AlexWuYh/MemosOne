@@ -23,6 +23,8 @@ class SyncWorker implements SyncService {
     required SyncMemoGateway memos,
     Connectivity? connectivity,
     SyncQueue? queue,
+    this.fullPullIntervalResolver,
+    this.periodicSyncEnabledResolver,
   })  : _db = db,
         _tokens = tokens,
         _memos = memos,
@@ -35,6 +37,12 @@ class SyncWorker implements SyncService {
   final SyncQueue _queue;
   final Connectivity _connectivity;
   final ConflictResolver _conflicts = ConflictResolver();
+
+  /// When null, uses [AppConstants.fullPullIntervalMinutes].
+  final Duration Function()? fullPullIntervalResolver;
+
+  /// When false, timer still drains push queue but skips scheduled full pulls.
+  final bool Function()? periodicSyncEnabledResolver;
 
   final _controllers = <String, StreamController<SyncStatusSnapshot>>{};
   final _timers = <String, Timer>{};
@@ -134,8 +142,9 @@ class SyncWorker implements SyncService {
     final last = DateTime.tryParse(cursor.value);
     if (last == null) return true;
     final clock = now ?? DateTime.now();
-    return clock.difference(last) >=
+    final interval = fullPullIntervalResolver?.call() ??
         const Duration(minutes: AppConstants.fullPullIntervalMinutes);
+    return clock.difference(last) >= interval;
   }
 
   Future<void> _cycle(Workspace workspace, {bool forcePull = false}) async {
@@ -175,10 +184,13 @@ class SyncWorker implements SyncService {
         await _pushOne(workspace, task);
       }
 
-      final doPull = await shouldFullPull(
-        workspace.localId,
-        forcePull: forcePull,
-      );
+      final periodicOk = periodicSyncEnabledResolver?.call() ?? true;
+      final doPull = forcePull ||
+          (periodicOk &&
+              await shouldFullPull(
+                workspace.localId,
+                forcePull: false,
+              ));
       if (doPull) {
         await _pull(workspace, reconcileDeletes: true);
       }
