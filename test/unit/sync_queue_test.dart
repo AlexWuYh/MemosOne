@@ -60,4 +60,50 @@ void main() {
     expect(tasks.length, 1);
     expect(tasks.first.action, 'create');
   });
+
+  test('update while running enqueues follow-up', () async {
+    await queue.enqueueMemo(
+      workspaceId: 'w',
+      entityLocalId: 'm1',
+      action: SyncAction.update,
+    );
+    final first = (await db.select(db.syncTasks).get()).single;
+    await queue.markRunning(first.id);
+    await queue.enqueueMemo(
+      workspaceId: 'w',
+      entityLocalId: 'm1',
+      action: SyncAction.update,
+    );
+    final tasks = await db.select(db.syncTasks).get();
+    expect(tasks.length, 2);
+    expect(
+      tasks.where((t) => t.status == SyncTaskStatus.running.name).length,
+      1,
+    );
+    expect(
+      tasks.where((t) => t.status == SyncTaskStatus.pending.name).length,
+      1,
+    );
+  });
+
+  test('clearBackoff makes failed tasks eligible immediately', () async {
+    await queue.enqueueMemo(
+      workspaceId: 'w',
+      entityLocalId: 'm1',
+      action: SyncAction.update,
+    );
+    final id = (await db.select(db.syncTasks).get()).single.id;
+    await queue.fail(
+      id: id,
+      retryCount: 2,
+      nextAttemptAt: DateTime.now().add(const Duration(hours: 1)),
+      error: 'temp',
+      dead: false,
+    );
+    expect(await queue.nextPending('w'), isNull);
+    await queue.clearBackoff('w');
+    final next = await queue.nextPending('w', ignoreBackoff: true);
+    expect(next, isNotNull);
+    expect(next!.entityLocalId, 'm1');
+  });
 }

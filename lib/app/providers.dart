@@ -288,6 +288,14 @@ final searchQueryProvider = StateProvider<String>((ref) => '');
 
 final selectedMemoIdProvider = StateProvider<String?>((ref) => null);
 
+/// Tags for active workspace (filter chips). Refreshes when memo list changes.
+final workspaceTagsProvider = FutureProvider.autoDispose<List<String>>((ref) async {
+  final ws = ref.watch(activeWorkspaceProvider);
+  ref.watch(memosProvider); // invalidate when memos stream updates
+  if (ws == null) return const [];
+  return ref.watch(memoRepositoryProvider).listTags(ws.localId);
+});
+
 final memosProvider = StreamProvider<List<Memo>>((ref) {
   final ws = ref.watch(activeWorkspaceProvider);
   if (ws == null) return Stream.value(const []);

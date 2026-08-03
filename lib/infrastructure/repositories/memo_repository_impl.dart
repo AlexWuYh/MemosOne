@@ -367,6 +367,15 @@ class MemoRepositoryImpl implements MemoRepository, SyncMemoGateway {
   }
 
   @override
+  Future<List<String>> listTags(String workspaceId) async {
+    final rows = await (_db.select(_db.tags)
+          ..where((t) => t.workspaceId.equals(workspaceId))
+          ..orderBy([(t) => OrderingTerm.asc(t.name)]))
+        .get();
+    return rows.map((r) => r.name).toList();
+  }
+
+  @override
   Future<List<Memo>> search(
     String workspaceId,
     String query, {
@@ -597,24 +606,69 @@ class MemoRepositoryImpl implements MemoRepository, SyncMemoGateway {
   }
 
   @override
-  Future<void> bindServerName(String localId, String serverName) async {
+  Future<void> bindServerName(
+    String localId,
+    String serverName, {
+    int? expectedVersion,
+  }) async {
+    final current = await getByLocalId(localId);
+    final advanced = expectedVersion != null &&
+        current != null &&
+        current.version != expectedVersion;
     await (_db.update(_db.memos)..where((t) => t.localId.equals(localId)))
         .write(
       MemosCompanion(
         serverName: Value(serverName),
-        dirty: const Value(false),
-        syncStatus: Value(MemoSyncStatus.clean.name),
+        dirty: Value(advanced),
+        syncStatus: Value(
+          advanced ? MemoSyncStatus.dirty.name : MemoSyncStatus.clean.name,
+        ),
         lastError: const Value(null),
         updatedAtServer: Value(DateTime.now()),
       ),
     );
+    if (advanced) {
+      await _queue.enqueueMemo(
+        workspaceId: current.workspaceId,
+        entityLocalId: localId,
+        action: SyncAction.update,
+      );
+    }
   }
 
   @override
-  Future<void> markCleanAfterPush(
+  Future<bool> markCleanAfterPush(
     String localId, {
     DateTime? updatedAtServer,
+    int? expectedVersion,
   }) async {
+    final current = await getByLocalId(localId);
+    if (current == null) return true;
+    if (expectedVersion != null && current.version != expectedVersion) {
+      // Local edits landed during the push — keep dirty and ensure queue work.
+      final open = await _queue.hasOpenTask(
+        workspaceId: current.workspaceId,
+        entityLocalId: localId,
+      );
+      if (!open) {
+        await _queue.enqueueMemo(
+          workspaceId: current.workspaceId,
+          entityLocalId: localId,
+          action: current.serverName == null
+              ? SyncAction.create
+              : SyncAction.update,
+        );
+      }
+      return false;
+    }
+    // Also skip clearing dirty if another queue task is still open for this row.
+    final open = await _queue.hasOpenTask(
+      workspaceId: current.workspaceId,
+      entityLocalId: localId,
+    );
+    if (open) {
+      return false;
+    }
     await (_db.update(_db.memos)..where((t) => t.localId.equals(localId)))
         .write(
       MemosCompanion(
@@ -624,6 +678,62 @@ class MemoRepositoryImpl implements MemoRepository, SyncMemoGateway {
         updatedAtServer: Value(updatedAtServer ?? DateTime.now()),
       ),
     );
+    return true;
+  }
+
+  @override
+  Future<int> requeueOrphanDirty(String workspaceId) async {
+    final rows = await (_db.select(_db.memos)
+          ..where(
+            (t) =>
+                t.workspaceId.equals(workspaceId) &
+                t.dirty.equals(true) &
+                t.deletedAt.isNull(),
+          ))
+        .get();
+    var n = 0;
+    for (final row in rows) {
+      final open = await _queue.hasOpenTask(
+        workspaceId: workspaceId,
+        entityLocalId: row.localId,
+      );
+      if (open) continue;
+      await _queue.enqueueMemo(
+        workspaceId: workspaceId,
+        entityLocalId: row.localId,
+        action: row.serverName == null || row.serverName!.isEmpty
+            ? SyncAction.create
+            : SyncAction.update,
+      );
+      n++;
+    }
+    // Soft-deleted dirty rows also need delete tasks.
+    final deleted = await (_db.select(_db.memos)
+          ..where(
+            (t) =>
+                t.workspaceId.equals(workspaceId) &
+                t.dirty.equals(true) &
+                t.deletedAt.isNotNull(),
+          ))
+        .get();
+    for (final row in deleted) {
+      final open = await _queue.hasOpenTask(
+        workspaceId: workspaceId,
+        entityLocalId: row.localId,
+      );
+      if (open) continue;
+      if (row.serverName == null || row.serverName!.isEmpty) {
+        await hardDeleteLocal(row.localId);
+        continue;
+      }
+      await _queue.enqueueMemo(
+        workspaceId: workspaceId,
+        entityLocalId: row.localId,
+        action: SyncAction.delete,
+      );
+      n++;
+    }
+    return n;
   }
 
   @override

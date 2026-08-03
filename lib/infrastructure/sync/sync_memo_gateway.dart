@@ -8,9 +8,22 @@ abstract interface class SyncMemoGateway {
 
   Future<void> markError(String localId, String error);
 
-  Future<void> markCleanAfterPush(String localId, {DateTime? updatedAtServer});
+  /// Marks clean only when [expectedVersion] still matches (or is null).
+  /// Returns false if local advanced during push (stays dirty / re-queued).
+  Future<bool> markCleanAfterPush(
+    String localId, {
+    DateTime? updatedAtServer,
+    int? expectedVersion,
+  });
 
-  Future<void> bindServerName(String localId, String serverName);
+  Future<void> bindServerName(
+    String localId,
+    String serverName, {
+    int? expectedVersion,
+  });
+
+  /// Dirty memos with no open queue task — re-enqueue so "立即同步" can drain.
+  Future<int> requeueOrphanDirty(String workspaceId);
 
   Future<void> hardDeleteLocal(String localId);
 

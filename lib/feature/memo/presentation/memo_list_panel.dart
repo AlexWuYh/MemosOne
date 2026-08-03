@@ -58,6 +58,30 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
     );
   }
 
+  List<Widget> _tagPills(WidgetRef ref, MemoQuery filter) {
+    final tags = ref.watch(workspaceTagsProvider).valueOrNull ?? const [];
+    if (tags.isEmpty) return const [];
+    final shown = tags.take(12).toList();
+    return [
+      for (final t in shown) ...[
+        const SizedBox(width: 8),
+        _FilterPill(
+          label: '#$t',
+          selected: filter.tag == t,
+          onTap: () {
+            if (filter.tag == t) {
+              ref.read(memoFilterProvider.notifier).state =
+                  filter.copyWith(clearTag: true);
+            } else {
+              ref.read(memoFilterProvider.notifier).state =
+                  filter.copyWith(tag: t);
+            }
+          },
+        ),
+      ],
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final memosAsync = ref.watch(memosProvider);
@@ -104,7 +128,10 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
             children: [
               _FilterPill(
                 label: '全部',
-                selected: !filter.onlyArchived && !filter.onlyPinned,
+                selected: !filter.onlyArchived &&
+                    !filter.onlyPinned &&
+                    !filter.onlyPublic &&
+                    filter.tag == null,
                 onTap: () => ref.read(memoFilterProvider.notifier).state =
                     const MemoQuery(),
               ),
@@ -117,11 +144,19 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
               ),
               const SizedBox(width: 8),
               _FilterPill(
+                label: '公开',
+                selected: filter.onlyPublic,
+                onTap: () => ref.read(memoFilterProvider.notifier).state =
+                    const MemoQuery(onlyPublic: true),
+              ),
+              const SizedBox(width: 8),
+              _FilterPill(
                 label: '归档',
                 selected: filter.onlyArchived,
                 onTap: () => ref.read(memoFilterProvider.notifier).state =
                     const MemoQuery(onlyArchived: true),
               ),
+              ..._tagPills(ref, filter),
             ],
           ),
         ),

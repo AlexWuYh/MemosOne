@@ -100,7 +100,8 @@ class SyncWorker implements SyncService {
 
   @override
   Future<void> syncNow(Workspace workspace) async {
-    await _cycle(workspace, forcePull: true);
+    // Force drain even if a cycle is already running: wait briefly then run.
+    await _cycle(workspace, forcePull: true, forceDrain: true);
   }
 
   @override
@@ -147,9 +148,26 @@ class SyncWorker implements SyncService {
     return clock.difference(last) >= interval;
   }
 
-  Future<void> _cycle(Workspace workspace, {bool forcePull = false}) async {
+  Future<void> _cycle(
+    Workspace workspace, {
+    bool forcePull = false,
+    bool forceDrain = false,
+  }) async {
     if (!workspace.isMemos) return;
-    if (_running.contains(workspace.localId)) return;
+
+    // Manual sync should not be dropped when a poll cycle is mid-flight.
+    if (_running.contains(workspace.localId)) {
+      if (!forceDrain) return;
+      for (var i = 0; i < 50; i++) {
+        if (!_running.contains(workspace.localId)) break;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      if (_running.contains(workspace.localId)) {
+        appLogger.w('syncNow: previous cycle still running, skip');
+        return;
+      }
+    }
+
     if (_authBlocked.contains(workspace.localId)) {
       await _emit(
         workspace.localId,
@@ -178,10 +196,27 @@ class SyncWorker implements SyncService {
     );
 
     try {
-      while (true) {
-        final task = await _queue.nextPending(workspace.localId);
-        if (task == null) break;
-        await _pushOne(workspace, task);
+      // Recover stuck running tasks always; force drain clears backoff too.
+      await _queue.recoverStuckRunning(workspace.localId);
+      if (forceDrain) {
+        await _queue.clearBackoff(workspace.localId);
+        await _memos.requeueOrphanDirty(workspace.localId);
+      }
+
+      // Drain queue; after first pass requeue orphans once more (race-safe).
+      for (var pass = 0; pass < 2; pass++) {
+        while (true) {
+          final task = await _queue.nextPending(
+            workspace.localId,
+            ignoreBackoff: forceDrain,
+          );
+          if (task == null) break;
+          await _pushOne(workspace, task);
+        }
+        if (pass == 0) {
+          final orphans = await _memos.requeueOrphanDirty(workspace.localId);
+          if (orphans == 0) break;
+        }
       }
 
       final periodicOk = periodicSyncEnabledResolver?.call() ?? true;
@@ -193,6 +228,15 @@ class SyncWorker implements SyncService {
               ));
       if (doPull) {
         await _pull(workspace, reconcileDeletes: true);
+        // Remote-delete may requeue creates — drain again.
+        while (true) {
+          final task = await _queue.nextPending(
+            workspace.localId,
+            ignoreBackoff: true,
+          );
+          if (task == null) break;
+          await _pushOne(workspace, task);
+        }
       }
 
       final dead = await _queue.countDead(workspace.localId);
@@ -204,7 +248,9 @@ class SyncWorker implements SyncService {
               ? GlobalSyncState.error
               : GlobalSyncState.idle,
           lastPushAt: DateTime.now(),
-          lastPullAt: doPull ? DateTime.now() : _snapshot(workspace.localId).lastPullAt,
+          lastPullAt: doPull
+              ? DateTime.now()
+              : _snapshot(workspace.localId).lastPullAt,
           lastError: dead > 0 ? 'Dead sync tasks: $dead' : null,
           clearError: dead == 0,
         ),
@@ -246,6 +292,8 @@ class SyncWorker implements SyncService {
     try {
       final client = await _client(workspace);
       final memo = await _memos.getByLocalId(task.entityLocalId);
+      // Snapshot version at push start so concurrent edits keep dirty=true.
+      final pushedVersion = memo?.version;
 
       switch (task.action) {
         case SyncAction.create:
@@ -261,18 +309,19 @@ class SyncWorker implements SyncService {
               pinned: memo.pinned,
               archived: memo.archived,
             );
+            // Complete queue first so markClean can see remaining tasks.
+            await _queue.complete(task.id);
             await _memos.markCleanAfterPush(
               memo.localId,
               updatedAtServer: remote.updateTime,
+              expectedVersion: pushedVersion,
             );
-            await _queue.complete(task.id);
             return;
           }
           final remote = await client.createMemo(
             content: memo.content,
             visibility: memo.visibility,
           );
-          await _memos.bindServerName(memo.localId, remote.name);
           if (memo.pinned || memo.archived) {
             await client.updateMemo(
               name: remote.name,
@@ -283,6 +332,11 @@ class SyncWorker implements SyncService {
             );
           }
           await _queue.complete(task.id);
+          await _memos.bindServerName(
+            memo.localId,
+            remote.name,
+            expectedVersion: pushedVersion,
+          );
           break;
         case SyncAction.update:
           if (memo == null) {
@@ -294,8 +348,12 @@ class SyncWorker implements SyncService {
               content: memo.content,
               visibility: memo.visibility,
             );
-            await _memos.bindServerName(memo.localId, remote.name);
             await _queue.complete(task.id);
+            await _memos.bindServerName(
+              memo.localId,
+              remote.name,
+              expectedVersion: pushedVersion,
+            );
             return;
           }
           final remote = await client.updateMemo(
@@ -305,11 +363,12 @@ class SyncWorker implements SyncService {
             pinned: memo.pinned,
             archived: memo.archived,
           );
+          await _queue.complete(task.id);
           await _memos.markCleanAfterPush(
             memo.localId,
             updatedAtServer: remote.updateTime,
+            expectedVersion: pushedVersion,
           );
-          await _queue.complete(task.id);
           break;
         case SyncAction.delete:
           if (memo?.serverName != null) {
@@ -386,6 +445,7 @@ class SyncWorker implements SyncService {
             remoteUpdatedAt: remote.updateTime,
           );
           if (winner == ConflictWinner.local) {
+            // Leave local; orphan requeue runs after pull completes.
             continue;
           }
           await _memos.applyRemoteOverwriteWithHistory(
@@ -416,6 +476,9 @@ class SyncWorker implements SyncService {
     if (reconcileDeletes) {
       await _reconcileRemoteDeletes(workspace.localId, seen);
     }
+
+    // Dirty rows that won LWW (or never got a queue task) need push work.
+    await _memos.requeueOrphanDirty(workspace.localId);
 
     await (_db.update(_db.workspaces)
           ..where((t) => t.localId.equals(workspace.localId)))

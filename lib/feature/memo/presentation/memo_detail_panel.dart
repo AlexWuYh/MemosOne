@@ -61,13 +61,21 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
       if (mounted) setState(() => _preview = true);
       return;
     }
+    // Same memo, content matches draft — metadata-only update (dirty/pin/etc.).
+    // Never force-switch edit/preview mode.
     if (_boundId == memo.localId && _controller.text == memo.content) {
       _boundContent = memo.content;
+      return;
+    }
+    // Same memo while actively editing: keep the user's draft & mode.
+    // External overwrites (LWW) only apply when already in preview.
+    if (_boundId == memo.localId && !_preview) {
       return;
     }
     final previousId = _boundId;
     final previousBound = _boundContent;
     final draft = _controller.text;
+    final switched = previousId != memo.localId;
     if (previousId != null &&
         previousId != memo.localId &&
         draft != previousBound) {
@@ -76,7 +84,6 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
           previousId,
           draft,
           expectedContent: previousBound,
-          enterPreview: false,
         ),
       );
     }
@@ -86,21 +93,20 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
       text: memo.content,
       selection: TextSelection.collapsed(offset: memo.content.length),
     );
-    if (mounted) {
+    // Preview only when opening another memo that already has content.
+    // Empty memos start in edit. Autosave never flips mode.
+    if (switched && mounted) {
       setState(() => _preview = memo.content.trim().isNotEmpty);
     }
   }
 
+  /// Persist content. Never auto-enters preview — user chooses 编辑/预览.
   Future<void> _saveById(
     String localId,
     String content, {
     required String expectedContent,
-    bool enterPreview = true,
   }) async {
-    if (content == expectedContent) {
-      if (enterPreview && mounted) setState(() => _preview = true);
-      return;
-    }
+    if (content == expectedContent) return;
     setState(() => _saving = true);
     try {
       await ref.read(memoRepositoryProvider).update(
@@ -108,9 +114,6 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
             MemoPatch(content: content),
           );
       if (_boundId == localId) _boundContent = content;
-      if (enterPreview && mounted && _boundId == localId) {
-        setState(() => _preview = true);
-      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -118,6 +121,7 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
 
   void _scheduleAutosave(Memo memo) {
     _autosaveTimer?.cancel();
+    // Stay in edit while typing; do not flip to preview on debounce.
     if (_preview) setState(() => _preview = false);
     final localId = memo.localId;
     final expected = _boundContent;
@@ -291,7 +295,9 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
                 selected: {_preview},
                 onSelectionChanged: (s) async {
                   if (s.first) {
+                    // Explicit user action: save then show preview.
                     await _manualSave(memo);
+                    if (mounted) setState(() => _preview = true);
                   } else {
                     setState(() => _preview = false);
                   }
@@ -468,7 +474,7 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
                     border: InputBorder.none,
                     filled: false,
                     contentPadding: EdgeInsets.fromLTRB(20, 16, 20, 24),
-                    hintText: '用 Markdown 书写… 支持 #标签\n停顿后自动保存并渲染预览',
+                    hintText: '用 Markdown 书写… 支持 #标签\n自动保存；点「预览」查看渲染效果',
                   ),
                   onChanged: (_) => _scheduleAutosave(memo),
                 ),

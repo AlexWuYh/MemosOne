@@ -18,6 +18,9 @@ abstract class MemoRepository {
 
   Future<List<Memo>> search(String workspaceId, String query, {MemoQuery filters = const MemoQuery()});
 
+  /// Distinct tag names for a workspace (sorted), for filter chips.
+  Future<List<String>> listTags(String workspaceId);
+
   Future<List<MemoHistoryEntry>> history(String memoLocalId);
 
   Future<Memo> restoreFromHistory(String historyLocalId);

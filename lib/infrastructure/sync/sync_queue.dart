@@ -17,6 +17,7 @@ class SyncQueue {
     required String entityLocalId,
     required SyncAction action,
   }) async {
+    // Include running so we don't spawn duplicate tasks mid-push.
     final existing = await (_db.select(_db.syncTasks)
           ..where(
             (t) =>
@@ -26,6 +27,7 @@ class SyncQueue {
                 t.status.isIn([
                   SyncTaskStatus.pending.name,
                   SyncTaskStatus.failed.name,
+                  SyncTaskStatus.running.name,
                 ]),
           ))
         .get();
@@ -66,21 +68,39 @@ class SyncQueue {
     // update
     final hasCreate = existing.any((e) => e.action == SyncAction.create.name);
     if (hasCreate) {
-      // keep create with latest payload (payload optional)
+      // keep create with latest payload (loaded from DB at push time)
       return;
     }
-    final hasUpdate = existing.any((e) => e.action == SyncAction.update.name);
-    if (hasUpdate) {
-      final task = existing.firstWhere((e) => e.action == SyncAction.update.name);
-      await (_db.update(_db.syncTasks)..where((t) => t.id.equals(task.id)))
-          .write(
-        SyncTasksCompanion(
-          status: Value(SyncTaskStatus.pending.name),
-          nextAttemptAt: Value(DateTime.now()),
-          updatedAt: Value(DateTime.now()),
-          lastError: const Value(null),
-        ),
-      );
+    final openUpdates = existing
+        .where((e) => e.action == SyncAction.update.name)
+        .toList();
+    if (openUpdates.isNotEmpty) {
+      // Prefer reactivating a non-running update; if only running exists,
+      // insert a follow-up so edits made during push are not lost.
+      final waiting = openUpdates
+          .where((e) => e.status != SyncTaskStatus.running.name)
+          .toList();
+      if (waiting.isNotEmpty) {
+        final task = waiting.first;
+        await (_db.update(_db.syncTasks)..where((t) => t.id.equals(task.id)))
+            .write(
+          SyncTasksCompanion(
+            status: Value(SyncTaskStatus.pending.name),
+            nextAttemptAt: Value(DateTime.now()),
+            updatedAt: Value(DateTime.now()),
+            lastError: const Value(null),
+          ),
+        );
+        return;
+      }
+      // Only a running update — queue one follow-up.
+      if (openUpdates.length == 1) {
+        await _insert(
+          workspaceId: workspaceId,
+          entityLocalId: entityLocalId,
+          action: SyncAction.update,
+        );
+      }
       return;
     }
     await _insert(
@@ -111,22 +131,92 @@ class SyncQueue {
         );
   }
 
-  Future<SyncTask?> nextPending(String workspaceId) async {
+  Future<SyncTask?> nextPending(
+    String workspaceId, {
+    bool ignoreBackoff = false,
+  }) async {
     final now = DateTime.now();
-    final row = await (_db.select(_db.syncTasks)
+    final query = _db.select(_db.syncTasks)
+      ..where(
+        (t) {
+          final base = t.workspaceId.equals(workspaceId) &
+              t.status.isIn([
+                SyncTaskStatus.pending.name,
+                SyncTaskStatus.failed.name,
+              ]);
+          if (ignoreBackoff) return base;
+          return base & t.nextAttemptAt.isSmallerOrEqualValue(now);
+        },
+      )
+      ..orderBy([(t) => OrderingTerm.asc(t.createdAt)])
+      ..limit(1);
+    final row = await query.getSingleOrNull();
+    return row == null ? null : syncTaskFromRow(row);
+  }
+
+  /// Recover tasks stuck in `running` after crash / interrupted push.
+  Future<void> recoverStuckRunning(String workspaceId) async {
+    final now = DateTime.now();
+    await (_db.update(_db.syncTasks)
+          ..where(
+            (t) =>
+                t.workspaceId.equals(workspaceId) &
+                t.status.equals(SyncTaskStatus.running.name),
+          ))
+        .write(
+      SyncTasksCompanion(
+        status: Value(SyncTaskStatus.pending.name),
+        nextAttemptAt: Value(now),
+        updatedAt: Value(now),
+      ),
+    );
+  }
+
+  /// Clear backoff on pending/failed so "立即同步" drains immediately.
+  Future<void> clearBackoff(String workspaceId) async {
+    final now = DateTime.now();
+    await (_db.update(_db.syncTasks)
           ..where(
             (t) =>
                 t.workspaceId.equals(workspaceId) &
                 t.status.isIn([
                   SyncTaskStatus.pending.name,
                   SyncTaskStatus.failed.name,
-                ]) &
-                t.nextAttemptAt.isSmallerOrEqualValue(now),
+                ]),
+          ))
+        .write(
+      SyncTasksCompanion(
+        status: Value(SyncTaskStatus.pending.name),
+        nextAttemptAt: Value(now),
+        updatedAt: Value(now),
+      ),
+    );
+  }
+
+  Future<void> prepareForceDrain(String workspaceId) async {
+    await recoverStuckRunning(workspaceId);
+    await clearBackoff(workspaceId);
+  }
+
+  /// True if this entity still has unfinished queue work.
+  Future<bool> hasOpenTask({
+    required String workspaceId,
+    required String entityLocalId,
+  }) async {
+    final rows = await (_db.select(_db.syncTasks)
+          ..where(
+            (t) =>
+                t.workspaceId.equals(workspaceId) &
+                t.entityLocalId.equals(entityLocalId) &
+                t.status.isIn([
+                  SyncTaskStatus.pending.name,
+                  SyncTaskStatus.failed.name,
+                  SyncTaskStatus.running.name,
+                ]),
           )
-          ..orderBy([(t) => OrderingTerm.asc(t.createdAt)])
           ..limit(1))
-        .getSingleOrNull();
-    return row == null ? null : syncTaskFromRow(row);
+        .get();
+    return rows.isNotEmpty;
   }
 
   Future<void> markRunning(String id) async {

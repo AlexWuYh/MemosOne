@@ -20,9 +20,27 @@
 
 ## Active focus
 
-1. Optional: Docker Memos live D2D (FIX-17)  
-2. Attachment remote upload (FIX-18)  
+1. Live sync D2D after force-drain / orphan requeue fix  
+2. Attachment remote upload (FIX-18) — web parity gap  
 3. Android share intent (FIX-19 family)
+
+## Web parity (Memos web → app)
+
+| Web capability | App | Notes |
+| -------------- | --- | ----- |
+| Memo CRUD + Markdown | Yes | Edit stays until user taps 预览 |
+| Visibility PRIVATE/PROTECTED/PUBLIC | Yes | |
+| Pin / Archive | Yes | |
+| Public share URL `/m/{id}` | Yes | Header bar on PUBLIC |
+| Explore public timeline | Yes | Feed-style cards + full view |
+| Search (local FTS) | Yes | |
+| Tags filter | Yes | Chips in list + tag tap in detail |
+| Calendar / heatmap | Yes | |
+| Sync status + force sync | Yes | Force drain + orphan requeue |
+| Attachments on Memos workspace | Partial | Local-only; remote upload deferred |
+| Comments / reactions / relations | No | Unsuitable for offline-first MVP; server social |
+| Shortcuts service | No | Deferred |
+| Instance admin / SSO | No | Not a client goal |
 
 ---
 
