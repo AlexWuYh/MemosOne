@@ -253,12 +253,32 @@ final activeWorkspaceProvider = Provider<Workspace?>((ref) {
   return list.first;
 });
 
-/// True when there is no workspace yet (failed login should not leave orphans).
+/// Reactive onboarding completion (prefs alone is not Riverpod-aware).
+final onboardingDoneProvider =
+    StateNotifierProvider<OnboardingDoneController, bool>((ref) {
+  return OnboardingDoneController(ref.watch(preferencesStoreProvider));
+});
+
+class OnboardingDoneController extends StateNotifier<bool> {
+  OnboardingDoneController(this._prefs) : super(_prefs.onboardingDone);
+
+  final PreferencesStore _prefs;
+
+  Future<void> markDone() async {
+    await _prefs.setOnboardingDone(true);
+    state = true;
+  }
+
+  Future<void> reset() async {
+    await _prefs.setOnboardingDone(false);
+    state = false;
+  }
+}
+
+/// First-run gate: **only** [onboardingDoneProvider].
+/// Never derive from workspace list — workspace is created *before* login succeeds.
 final needsOnboardingProvider = Provider<bool>((ref) {
-  final workspaces = ref.watch(workspacesProvider);
-  if (workspaces.isLoading) return false;
-  final list = workspaces.valueOrNull ?? const [];
-  return list.isEmpty;
+  return !ref.watch(onboardingDoneProvider);
 });
 
 final memoFilterProvider =

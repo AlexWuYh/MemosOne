@@ -3,8 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
 import '../../../core/errors/app_failure.dart';
+import '../../../core/theme/app_theme.dart';
 
-/// First-run: connect to Memos cloud, then work offline on the local cache.
+/// First-run connect flow. Never leaves until [onboardingDoneProvider] is true.
 class OnboardingPage extends ConsumerStatefulWidget {
   const OnboardingPage({super.key});
 
@@ -21,6 +22,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   var _insecure = false;
   var _busy = false;
   String? _error;
+  /// 0 choose · 1 form · 2 failed
   var _step = 0;
 
   @override
@@ -60,7 +62,6 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       );
       createdWorkspaceId = ws.localId;
 
-      // Authenticate BEFORE treating onboarding as done / navigating home.
       if (_useToken) {
         await ref.read(authRepositoryProvider).loginWithAccessToken(
               workspace: ws,
@@ -81,12 +82,11 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
         try {
           await ref.read(syncServiceProvider).syncNow(latest);
         } catch (e) {
-          // Login succeeded; sync can fail offline — still enter app.
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  '已登录，但首次同步失败：${e is AppFailure ? e.message : e}',
+                  '已登录，首次同步未完成：${e is AppFailure ? e.message : e}',
                 ),
               ),
             );
@@ -94,15 +94,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
         }
       }
 
-      await ref.read(preferencesStoreProvider).setOnboardingDone(true);
-      createdWorkspaceId = null; // success — do not roll back
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已连接并完成首次同步，可离线继续使用')),
-        );
-      }
+      createdWorkspaceId = null;
+      await ref.read(onboardingDoneProvider.notifier).markDone();
     } catch (e) {
-      // Roll back half-created workspace so user stays on onboarding.
       if (createdWorkspaceId != null) {
         try {
           await ref
@@ -113,21 +107,17 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       }
       final msg = e is AppFailure ? e.message : e.toString();
       if (mounted) {
-        setState(() => _error = msg);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: Theme.of(context).colorScheme.error,
-            content: Text(msg, style: const TextStyle(color: Colors.white)),
-            duration: const Duration(seconds: 6),
-          ),
-        );
+        setState(() {
+          _error = msg;
+          _step = 2;
+        });
       }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _offlineOnly() async {
+  Future<void> _skipToLocal() async {
     setState(() {
       _busy = true;
       _error = null;
@@ -137,87 +127,149 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
           .read(workspaceRepositoryProvider)
           .createLocal(name: '本地笔记');
       await ref.read(activeWorkspaceIdProvider.notifier).select(ws.localId);
-      await ref.read(preferencesStoreProvider).setOnboardingDone(true);
+      await ref.read(onboardingDoneProvider.notifier).markDone();
     } catch (e) {
-      final msg = e.toString();
-      setState(() => _error = msg);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-      }
+      if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
+  Future<void> _skipLoginLater() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final url = _url.text.trim();
+      if (url.isEmpty || !url.startsWith('http')) {
+        await _skipToLocal();
+        return;
+      }
+      final wsRepo = ref.read(workspaceRepositoryProvider);
+      final name = Uri.tryParse(url)?.host ?? 'Memos';
+      final ws = await wsRepo.createMemos(
+        name: name,
+        serverBaseUrl: url,
+        allowInsecureTls: _insecure,
+      );
+      await ref.read(activeWorkspaceIdProvider.notifier).select(ws.localId);
+      await ref.read(onboardingDoneProvider.notifier).markDone();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已跳过登录，可稍后在侧栏点击「登录」')),
+        );
+      }
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Widget _errorBanner(String msg) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFCEBEA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFF0B4AF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '登录失败',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: AppTheme.danger,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            msg,
+            style: const TextStyle(
+              height: 1.4,
+              color: Color(0xFF7A271A),
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
+      backgroundColor: AppTheme.paper,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
+            constraints: const BoxConstraints(maxWidth: 420),
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+              padding: const EdgeInsets.fromLTRB(28, 40, 28, 40),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Container(
-                    height: 72,
-                    width: 72,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [scheme.primary, scheme.tertiary],
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      height: 60,
+                      width: 60,
+                      decoration: BoxDecoration(
+                        color: AppTheme.accentSoft,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppTheme.line),
                       ),
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: scheme.primary.withValues(alpha: 0.28),
-                          blurRadius: 24,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
+                      child: const Icon(
+                        Icons.auto_stories_rounded,
+                        color: AppTheme.accent,
+                        size: 28,
+                      ),
                     ),
-                    child: Icon(
-                      Icons.auto_stories_rounded,
-                      color: scheme.onPrimary,
-                      size: 36,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    'Memos One',
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.5,
-                        ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '连接你的 Memos 服务器，本地缓存后随时离线编辑，网络恢复后自动同步。',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                          height: 1.45,
-                        ),
                   ),
                   const SizedBox(height: 28),
+                  const Text(
+                    'Memos One',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.7,
+                      color: AppTheme.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '连接服务器后，笔记会缓存在本地——离线也能写，联网自动同步。',
+                    style: TextStyle(
+                      fontSize: 15,
+                      height: 1.5,
+                      color: AppTheme.inkMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
                   if (_step == 0) ...[
-                    _HeroCard(
-                      icon: Icons.cloud_done_outlined,
+                    _ChoiceCard(
+                      icon: Icons.cloud_outlined,
                       title: '连接云端 Memos',
-                      subtitle: '推荐 · 首次同步后即可离线使用',
-                      primary: true,
+                      subtitle: '推荐 · 登录并同步',
+                      emphasized: true,
                       onTap: () => setState(() => _step = 1),
                     ),
-                    const SizedBox(height: 12),
-                    _HeroCard(
+                    const SizedBox(height: 10),
+                    _ChoiceCard(
                       icon: Icons.phone_iphone_outlined,
                       title: '仅本地使用',
-                      subtitle: '不连接服务器（可稍后在设置中添加）',
-                      primary: false,
-                      onTap: _busy ? null : _offlineOnly,
+                      subtitle: '稍后再连接服务器',
+                      onTap: _busy ? null : _skipToLocal,
                     ),
                   ] else ...[
+                    if (_error != null) ...[
+                      _errorBanner(_error!),
+                      const SizedBox(height: 16),
+                    ],
                     TextField(
                       controller: _url,
                       decoration: const InputDecoration(
@@ -232,14 +284,13 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('允许不安全 TLS'),
-                      subtitle: const Text('仅用于局域网自签名证书'),
+                      subtitle: const Text('局域网自签名证书'),
                       value: _insecure,
                       onChanged: (v) => setState(() => _insecure = v),
                     ),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('使用 Access Token'),
-                      subtitle: const Text('从 Memos 设置复制令牌时勾选'),
                       value: _useToken,
                       onChanged: (v) => setState(() => _useToken = v),
                     ),
@@ -259,7 +310,6 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                           labelText: '用户名',
                           prefixIcon: Icon(Icons.person_outline),
                         ),
-                        autofillHints: const [AutofillHints.username],
                       ),
                       const SizedBox(height: 12),
                       TextField(
@@ -269,25 +319,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                           prefixIcon: Icon(Icons.lock_outline),
                         ),
                         obscureText: true,
-                        autofillHints: const [AutofillHints.password],
                         onSubmitted: (_) => _connect(),
-                      ),
-                    ],
-                    if (_error != null) ...[
-                      const SizedBox(height: 12),
-                      Material(
-                        color: scheme.errorContainer,
-                        borderRadius: BorderRadius.circular(12),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Text(
-                            _error!,
-                            style: TextStyle(
-                              color: scheme.onErrorContainer,
-                              height: 1.4,
-                            ),
-                          ),
-                        ),
                       ),
                     ],
                     const SizedBox(height: 20),
@@ -297,14 +329,33 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                           ? const SizedBox(
                               width: 20,
                               height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
                             )
-                          : const Text('连接并同步'),
+                          : Text(_step == 2 ? '重试登录' : '连接并同步'),
                     ),
+                    if (_step == 2) ...[
+                      const SizedBox(height: 10),
+                      OutlinedButton(
+                        onPressed: _busy ? null : _skipLoginLater,
+                        child: const Text('跳过登录，稍后再登录'),
+                      ),
+                      const SizedBox(height: 6),
+                      TextButton(
+                        onPressed: _busy ? null : _skipToLocal,
+                        child: const Text('改为仅本地使用'),
+                      ),
+                    ],
                     const SizedBox(height: 8),
                     TextButton(
-                      onPressed:
-                          _busy ? null : () => setState(() => _step = 0),
+                      onPressed: _busy
+                          ? null
+                          : () => setState(() {
+                                _step = 0;
+                                _error = null;
+                              }),
                       child: const Text('返回'),
                     ),
                   ],
@@ -318,37 +369,41 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   }
 }
 
-class _HeroCard extends StatelessWidget {
-  const _HeroCard({
+class _ChoiceCard extends StatelessWidget {
+  const _ChoiceCard({
     required this.icon,
     required this.title,
     required this.subtitle,
-    required this.primary,
+    this.emphasized = false,
     this.onTap,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
-  final bool primary;
+  final bool emphasized;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: primary
-          ? scheme.primaryContainer.withValues(alpha: 0.55)
-          : scheme.surfaceContainerHighest.withValues(alpha: 0.35),
-      borderRadius: BorderRadius.circular(16),
+      color: emphasized ? AppTheme.accentSoft : AppTheme.paperElevated,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: emphasized
+              ? AppTheme.accent.withValues(alpha: 0.35)
+              : AppTheme.line,
+        ),
+      ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Icon(icon, size: 28, color: scheme.primary),
+              Icon(icon, color: AppTheme.accent),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -356,21 +411,24 @@ class _HeroCard extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                        color: AppTheme.ink,
+                      ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
                     Text(
                       subtitle,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.inkMuted,
+                      ),
                     ),
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+              const Icon(Icons.chevron_right, color: AppTheme.inkMuted),
             ],
           ),
         ),

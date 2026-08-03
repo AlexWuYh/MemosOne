@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../domain/entities/sync_models.dart';
 import '../../../domain/entities/workspace.dart';
 import '../../setting/presentation/settings_page.dart';
@@ -18,18 +19,21 @@ class WorkspaceRail extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return Material(
-      color: scheme.surfaceContainerLowest,
+      color: AppTheme.paperElevated,
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(18, 20, 18, 10),
               child: Text(
                 '工作区',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                  color: AppTheme.inkMuted,
+                ),
               ),
             ),
             Expanded(

@@ -202,9 +202,7 @@ class SettingsPage extends ConsumerWidget {
                   await ref
                       .read(activeWorkspaceIdProvider.notifier)
                       .select(null);
-                  await ref
-                      .read(preferencesStoreProvider)
-                      .setOnboardingDone(false);
+                  await ref.read(onboardingDoneProvider.notifier).reset();
                   if (context.mounted) Navigator.pop(context);
                 }
               },

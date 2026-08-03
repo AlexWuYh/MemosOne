@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/navigation_state.dart';
 import '../../../app/providers.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../domain/entities/memo.dart';
 import '../../../domain/entities/sync_models.dart';
 import '../../../domain/entities/workspace.dart';
@@ -12,6 +13,7 @@ import '../../explore/presentation/explore_page.dart';
 import '../../memo/presentation/memo_detail_panel.dart';
 import '../../memo/presentation/memo_feed_panel.dart';
 import '../../memo/presentation/memo_list_panel.dart';
+import '../../setting/presentation/settings_page.dart';
 import '../../workspace/presentation/workspace_dialogs.dart';
 import '../../workspace/presentation/workspace_rail.dart';
 
@@ -27,13 +29,17 @@ class HomeShell extends ConsumerWidget {
         );
     ref.read(selectedMemoIdProvider.notifier).state = memo.localId;
     ref.read(appViewModeProvider.notifier).state = AppViewMode.notes;
+    ref.read(memoListCollapsedProvider.notifier).state = false;
   }
 
-  void _openWorkspaces(BuildContext context) {
+  void _showWorkspaces(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
+      backgroundColor: AppTheme.paperElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (_) => const SizedBox(
         height: 520,
         child: WorkspaceRail(),
@@ -44,14 +50,14 @@ class HomeShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final width = MediaQuery.sizeOf(context).width;
-    final isWide = width >= 960;
-    final selectedId = ref.watch(selectedMemoIdProvider);
+    final isWide = width >= 900;
     final active = ref.watch(activeWorkspaceProvider);
-    final sync = ref.watch(syncStatusProvider).valueOrNull;
     final mode = ref.watch(appViewModeProvider);
-    final railCollapsed = ref.watch(workspaceRailCollapsedProvider);
     final listCollapsed = ref.watch(memoListCollapsedProvider);
-    final scheme = Theme.of(context).colorScheme;
+    // true = hide workspace list panel (icon-rail only)
+    final workspaceHidden = ref.watch(workspaceRailCollapsedProvider);
+    final sync = ref.watch(syncStatusProvider).valueOrNull;
+    final selectedId = ref.watch(selectedMemoIdProvider);
     final needsLogin = active?.isMemos == true &&
         active?.authState != WorkspaceAuthState.ok;
 
@@ -61,12 +67,10 @@ class HomeShell extends ConsumerWidget {
             _newMemo(ref),
         const SingleActivator(LogicalKeyboardKey.keyN, control: true): () =>
             _newMemo(ref),
-        const SingleActivator(LogicalKeyboardKey.keyF, meta: true): () {
-          ref.read(searchFocusNodeProvider).requestFocus();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyF, control: true): () {
-          ref.read(searchFocusNodeProvider).requestFocus();
-        },
+        const SingleActivator(LogicalKeyboardKey.keyF, meta: true): () =>
+            ref.read(searchFocusNodeProvider).requestFocus(),
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true): () =>
+            ref.read(searchFocusNodeProvider).requestFocus(),
         const SingleActivator(LogicalKeyboardKey.keyS, meta: true): () {
           final ws = ref.read(activeWorkspaceProvider);
           if (ws != null && ws.isMemos) {
@@ -79,177 +83,460 @@ class HomeShell extends ConsumerWidget {
             ref.read(syncServiceProvider).syncNow(ws);
           }
         },
+        const SingleActivator(LogicalKeyboardKey.keyB, meta: true): () {
+          ref.read(memoListCollapsedProvider.notifier).state = !listCollapsed;
+        },
+        const SingleActivator(LogicalKeyboardKey.keyB, control: true): () {
+          ref.read(memoListCollapsedProvider.notifier).state = !listCollapsed;
+        },
       },
       child: Focus(
         autofocus: true,
         child: Scaffold(
-          appBar: AppBar(
-            titleSpacing: 8,
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(active?.name ?? 'Memos One'),
-                if (active != null)
-                  Text(
-                    active.isMemos
-                        ? (active.serverBaseUrl ?? 'Memos')
-                        : '本地工作区',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
+          backgroundColor: AppTheme.paper,
+          body: active == null
+              ? Center(
+                  child: FilledButton(
+                    onPressed: () => _showWorkspaces(context),
+                    child: const Text('添加工作区'),
                   ),
-              ],
-            ),
-            leading: !isWide
-                ? IconButton(
-                    tooltip: '工作区',
-                    icon: const Icon(Icons.menu_rounded),
-                    onPressed: () => _openWorkspaces(context),
-                  )
-                : null,
-            actions: [
-              if (isWide) ...[
-                IconButton(
-                  tooltip: railCollapsed ? '展开工作区' : '折叠工作区',
-                  onPressed: () {
-                    ref.read(workspaceRailCollapsedProvider.notifier).state =
-                        !railCollapsed;
-                  },
-                  icon: Icon(
-                    railCollapsed
-                        ? Icons.keyboard_double_arrow_right
-                        : Icons.keyboard_double_arrow_left,
-                  ),
+                )
+              : Row(
+                  children: [
+                    // —— Primary icon rail (signature navigation) ——
+                    _PrimaryRail(
+                      mode: mode,
+                      onMode: (m) =>
+                          ref.read(appViewModeProvider.notifier).state = m,
+                      onToggleWorkspace: isWide
+                          ? () {
+                              ref
+                                  .read(workspaceRailCollapsedProvider.notifier)
+                                  .state = !workspaceHidden;
+                            }
+                          : () => _showWorkspaces(context),
+                      workspaceOpen: isWide && !workspaceHidden,
+                      onSettings: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const SettingsPage(),
+                          ),
+                        );
+                      },
+                      onNew: () => _newMemo(ref),
+                    ),
+                    // —— Optional workspace list ——
+                    if (isWide && !workspaceHidden) ...[
+                      const VerticalDivider(width: 1),
+                      const SizedBox(width: 240, child: WorkspaceRail()),
+                    ],
+                    const VerticalDivider(width: 1),
+                    // —— Main content ——
+                    Expanded(
+                      child: Column(
+                        children: [
+                          _TopBar(
+                            active: active,
+                            sync: sync,
+                            needsLogin: needsLogin,
+                            mode: mode,
+                            listCollapsed: listCollapsed,
+                            showListToggle: isWide &&
+                                (mode == AppViewMode.notes ||
+                                    mode == AppViewMode.calendar),
+                            onToggleList: () {
+                              ref
+                                  .read(memoListCollapsedProvider.notifier)
+                                  .state = !listCollapsed;
+                            },
+                            onLogin: () =>
+                                showLoginDialog(context, ref, active),
+                            onSync: () {
+                              if (active.isMemos) {
+                                ref
+                                    .read(syncServiceProvider)
+                                    .syncNow(active);
+                              }
+                            },
+                            onNew: () => _newMemo(ref),
+                          ),
+                          const Divider(height: 1),
+                          Expanded(
+                            child: isWide
+                                ? _WideContent(
+                                    mode: mode,
+                                    listCollapsed: listCollapsed,
+                                  )
+                                : _NarrowContent(
+                                    mode: mode,
+                                    selectedId: selectedId,
+                                  ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                if (mode == AppViewMode.notes)
-                  IconButton(
-                    tooltip: listCollapsed ? '展开列表' : '折叠列表',
-                    onPressed: () {
-                      ref.read(memoListCollapsedProvider.notifier).state =
-                          !listCollapsed;
-                    },
-                    icon: Icon(
-                      listCollapsed
-                          ? Icons.view_sidebar_outlined
-                          : Icons.view_sidebar,
-                    ),
-                  ),
-              ],
-              if (active?.isMemos == true) ...[
-                _SyncChip(snapshot: sync, workspace: active!),
-                if (needsLogin)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: FilledButton.tonalIcon(
-                      onPressed: () =>
-                          showLoginDialog(context, ref, active),
-                      icon: const Icon(Icons.login, size: 18),
-                      label: const Text('登录'),
-                    ),
-                  ),
-              ],
-              IconButton(
-                tooltip: '新建笔记',
-                onPressed: active == null ? null : () => _newMemo(ref),
-                icon: const Icon(Icons.add_rounded),
-              ),
-              const SizedBox(width: 4),
-            ],
-          ),
-          floatingActionButton: (!isWide && active != null)
-              ? FloatingActionButton.extended(
+          floatingActionButton: (!isWide)
+              ? FloatingActionButton(
                   onPressed: () => _newMemo(ref),
-                  icon: const Icon(Icons.edit_rounded),
-                  label: const Text('写笔记'),
+                  child: const Icon(Icons.edit_rounded),
                 )
               : null,
-          body: active == null
-              ? const Center(child: Text('请添加工作区并登录 Memos'))
-              : isWide
-                  ? Row(
-                      children: [
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          width: railCollapsed ? 56 : 268,
-                          child: railCollapsed
-                              ? _CollapsedNav(
-                                  mode: mode,
-                                  onMode: (m) => ref
-                                      .read(appViewModeProvider.notifier)
-                                      .state = m,
-                                  onExpand: () => ref
-                                      .read(workspaceRailCollapsedProvider
-                                          .notifier)
-                                      .state = false,
-                                  onWorkspaces: () =>
-                                      _openWorkspaces(context),
-                                )
-                              : Column(
-                                  children: [
-                                    _ModeTabs(mode: mode),
-                                    const Divider(height: 1),
-                                    const Expanded(child: WorkspaceRail()),
-                                  ],
-                                ),
-                        ),
-                        const VerticalDivider(width: 1),
-                        ..._wideBody(
-                          context,
-                          ref,
-                          mode: mode,
-                          listCollapsed: listCollapsed,
-                        ),
-                      ],
-                    )
-                  : Column(
-                      children: [
-                        _ModeTabs(mode: mode, dense: true),
-                        const Divider(height: 1),
-                        Expanded(child: _mobileBody(mode, selectedId)),
-                      ],
-                    ),
         ),
       ),
     );
   }
+}
 
-  List<Widget> _wideBody(
-    BuildContext context,
-    WidgetRef ref, {
-    required AppViewMode mode,
-    required bool listCollapsed,
-  }) {
+class _PrimaryRail extends StatelessWidget {
+  const _PrimaryRail({
+    required this.mode,
+    required this.onMode,
+    required this.onToggleWorkspace,
+    required this.workspaceOpen,
+    required this.onSettings,
+    required this.onNew,
+  });
+
+  final AppViewMode mode;
+  final ValueChanged<AppViewMode> onMode;
+  final VoidCallback onToggleWorkspace;
+  final bool workspaceOpen;
+  final VoidCallback onSettings;
+  final VoidCallback onNew;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 68,
+      decoration: const BoxDecoration(
+        color: AppTheme.paperElevated,
+        border: Border(right: BorderSide(color: AppTheme.line)),
+      ),
+      child: SafeArea(
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            Tooltip(
+              message: 'Memos One',
+              child: Container(
+                height: 36,
+                width: 36,
+                decoration: BoxDecoration(
+                  color: AppTheme.accentSoft,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.auto_stories_rounded,
+                  size: 20,
+                  color: AppTheme.accent,
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            _RailItem(
+              icon: Icons.folder_outlined,
+              selectedIcon: Icons.folder_rounded,
+              label: '工作区',
+              selected: workspaceOpen,
+              onTap: onToggleWorkspace,
+            ),
+            const SizedBox(height: 6),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+              height: 1,
+              color: AppTheme.line,
+            ),
+            _RailItem(
+              icon: Icons.notes_outlined,
+              selectedIcon: Icons.notes_rounded,
+              label: '笔记',
+              selected: mode == AppViewMode.notes,
+              onTap: () => onMode(AppViewMode.notes),
+            ),
+            _RailItem(
+              icon: Icons.view_day_outlined,
+              selectedIcon: Icons.view_day_rounded,
+              label: '信息流',
+              selected: mode == AppViewMode.feed,
+              onTap: () => onMode(AppViewMode.feed),
+            ),
+            _RailItem(
+              icon: Icons.public_outlined,
+              selectedIcon: Icons.public_rounded,
+              label: 'Explore',
+              selected: mode == AppViewMode.explore,
+              onTap: () => onMode(AppViewMode.explore),
+            ),
+            _RailItem(
+              icon: Icons.calendar_today_outlined,
+              selectedIcon: Icons.calendar_today_rounded,
+              label: '日历',
+              selected: mode == AppViewMode.calendar,
+              onTap: () => onMode(AppViewMode.calendar),
+            ),
+            const Spacer(),
+            _RailItem(
+              icon: Icons.add_circle_outline,
+              selectedIcon: Icons.add_circle,
+              label: '新建',
+              selected: false,
+              onTap: onNew,
+            ),
+            _RailItem(
+              icon: Icons.settings_outlined,
+              selectedIcon: Icons.settings_rounded,
+              label: '设置',
+              selected: false,
+              onTap: onSettings,
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RailItem extends StatefulWidget {
+  const _RailItem({
+    required this.icon,
+    required this.selectedIcon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  State<_RailItem> createState() => _RailItemState();
+}
+
+class _RailItemState extends State<_RailItem> {
+  var _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = widget.selected;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 10),
+      child: Tooltip(
+        message: widget.label,
+        waitDuration: const Duration(milliseconds: 400),
+        child: MouseRegion(
+          onEnter: (_) => setState(() => _hover = true),
+          onExit: (_) => setState(() => _hover = false),
+          child: Material(
+            color: selected
+                ? AppTheme.accentSoft
+                : _hover
+                    ? AppTheme.line.withValues(alpha: 0.45)
+                    : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: widget.onTap,
+              child: SizedBox(
+                height: 44,
+                child: Icon(
+                  selected ? widget.selectedIcon : widget.icon,
+                  size: 22,
+                  color: selected ? AppTheme.accent : AppTheme.inkMuted,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TopBar extends StatelessWidget {
+  const _TopBar({
+    required this.active,
+    required this.sync,
+    required this.needsLogin,
+    required this.mode,
+    required this.listCollapsed,
+    required this.showListToggle,
+    required this.onToggleList,
+    required this.onLogin,
+    required this.onSync,
+    required this.onNew,
+  });
+
+  final Workspace active;
+  final SyncStatusSnapshot? sync;
+  final bool needsLogin;
+  final AppViewMode mode;
+  final bool listCollapsed;
+  final bool showListToggle;
+  final VoidCallback onToggleList;
+  final VoidCallback onLogin;
+  final VoidCallback onSync;
+  final VoidCallback onNew;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = switch (mode) {
+      AppViewMode.notes => '笔记',
+      AppViewMode.feed => '信息流',
+      AppViewMode.explore => 'Explore',
+      AppViewMode.calendar => '日历',
+    };
+
+    return Container(
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      color: AppTheme.paper.withValues(alpha: 0.95),
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -0.3,
+              color: AppTheme.ink,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              active.name,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppTheme.inkMuted,
+              ),
+            ),
+          ),
+          const Spacer(),
+          if (showListToggle)
+            IconButton(
+              tooltip: listCollapsed ? '显示列表' : '隐藏列表',
+              onPressed: onToggleList,
+              icon: Icon(
+                listCollapsed
+                    ? Icons.vertical_split_outlined
+                    : Icons.vertical_split,
+                color: AppTheme.inkMuted,
+              ),
+            ),
+          if (active.isMemos) ...[
+            _SoftSync(snapshot: sync, onTap: onSync),
+            if (needsLogin) ...[
+              const SizedBox(width: 8),
+              FilledButton.tonal(
+                onPressed: onLogin,
+                child: const Text('登录'),
+              ),
+            ],
+          ],
+          const SizedBox(width: 6),
+          FilledButton.icon(
+            onPressed: onNew,
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('新建'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SoftSync extends StatelessWidget {
+  const _SoftSync({required this.snapshot, required this.onTap});
+
+  final SyncStatusSnapshot? snapshot;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = snapshot ?? const SyncStatusSnapshot.idle();
+    final (icon, label) = switch (s.state) {
+      GlobalSyncState.syncing => (Icons.sync, '同步中'),
+      GlobalSyncState.offline => (Icons.cloud_off_outlined, '离线'),
+      GlobalSyncState.authRequired => (Icons.lock_outline, '需登录'),
+      GlobalSyncState.error => (Icons.error_outline, '异常'),
+      GlobalSyncState.idle => (
+          Icons.cloud_done_outlined,
+          s.pendingCount > 0 ? '${s.pendingCount} 待同步' : '已同步',
+        ),
+    };
+    return TextButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 18),
+      label: Text(label),
+      style: TextButton.styleFrom(foregroundColor: AppTheme.inkMuted),
+    );
+  }
+}
+
+class _WideContent extends StatelessWidget {
+  const _WideContent({
+    required this.mode,
+    required this.listCollapsed,
+  });
+
+  final AppViewMode mode;
+  final bool listCollapsed;
+
+  @override
+  Widget build(BuildContext context) {
     switch (mode) {
       case AppViewMode.notes:
-        return [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: listCollapsed ? 0 : 340,
-            child: listCollapsed
-                ? const SizedBox.shrink()
-                : const MemoListPanel(),
-          ),
-          if (!listCollapsed) const VerticalDivider(width: 1),
-          const Expanded(child: MemoDetailPanel()),
-        ];
+        return Row(
+          children: [
+            if (!listCollapsed) ...[
+              const SizedBox(width: 320, child: MemoListPanel()),
+              const VerticalDivider(width: 1),
+            ],
+            const Expanded(child: MemoDetailPanel()),
+          ],
+        );
       case AppViewMode.feed:
-        return [
-          const Expanded(flex: 5, child: MemoFeedPanel()),
-          const VerticalDivider(width: 1),
-          const Expanded(flex: 4, child: MemoDetailPanel()),
-        ];
+        return const Row(
+          children: [
+            Expanded(flex: 5, child: MemoFeedPanel()),
+            VerticalDivider(width: 1),
+            Expanded(flex: 4, child: MemoDetailPanel()),
+          ],
+        );
       case AppViewMode.explore:
-        return [const Expanded(child: ExplorePage())];
+        return const ExplorePage();
       case AppViewMode.calendar:
-        return [
-          const Expanded(flex: 5, child: CalendarPanel()),
-          const VerticalDivider(width: 1),
-          const Expanded(flex: 4, child: MemoListPanel(compact: true)),
-        ];
+        return Row(
+          children: [
+            const Expanded(flex: 5, child: CalendarPanel()),
+            if (!listCollapsed) ...[
+              const VerticalDivider(width: 1),
+              const SizedBox(width: 300, child: MemoListPanel(compact: true)),
+            ],
+          ],
+        );
     }
   }
+}
 
-  Widget _mobileBody(AppViewMode mode, String? selectedId) {
+class _NarrowContent extends StatelessWidget {
+  const _NarrowContent({
+    required this.mode,
+    required this.selectedId,
+  });
+
+  final AppViewMode mode;
+  final String? selectedId;
+
+  @override
+  Widget build(BuildContext context) {
     switch (mode) {
       case AppViewMode.notes:
         return selectedId == null
@@ -264,144 +551,5 @@ class HomeShell extends ConsumerWidget {
       case AppViewMode.calendar:
         return const CalendarPanel();
     }
-  }
-}
-
-class _ModeTabs extends ConsumerWidget {
-  const _ModeTabs({required this.mode, this.dense = false});
-
-  final AppViewMode mode;
-  final bool dense;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(8, dense ? 6 : 10, 8, dense ? 6 : 8),
-      child: SegmentedButton<AppViewMode>(
-        segments: const [
-          ButtonSegment(
-            value: AppViewMode.notes,
-            icon: Icon(Icons.notes_rounded, size: 16),
-            label: Text('笔记'),
-          ),
-          ButtonSegment(
-            value: AppViewMode.feed,
-            icon: Icon(Icons.view_stream_rounded, size: 16),
-            label: Text('信息流'),
-          ),
-          ButtonSegment(
-            value: AppViewMode.explore,
-            icon: Icon(Icons.travel_explore_rounded, size: 16),
-            label: Text('Explore'),
-          ),
-          ButtonSegment(
-            value: AppViewMode.calendar,
-            icon: Icon(Icons.calendar_month_rounded, size: 16),
-            label: Text('日历'),
-          ),
-        ],
-        selected: {mode},
-        onSelectionChanged: (s) {
-          ref.read(appViewModeProvider.notifier).state = s.first;
-        },
-        style: const ButtonStyle(
-          visualDensity: VisualDensity.compact,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-      ),
-    );
-  }
-}
-
-class _CollapsedNav extends StatelessWidget {
-  const _CollapsedNav({
-    required this.mode,
-    required this.onMode,
-    required this.onExpand,
-    required this.onWorkspaces,
-  });
-
-  final AppViewMode mode;
-  final ValueChanged<AppViewMode> onMode;
-  final VoidCallback onExpand;
-  final VoidCallback onWorkspaces;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Theme.of(context).colorScheme.surfaceContainerLowest,
-      child: Column(
-        children: [
-          IconButton(
-            tooltip: '展开工作区',
-            onPressed: onExpand,
-            icon: const Icon(Icons.keyboard_double_arrow_right),
-          ),
-          IconButton(
-            tooltip: '工作区',
-            onPressed: onWorkspaces,
-            icon: const Icon(Icons.workspaces_outline),
-          ),
-          const Divider(),
-          _navIcon(Icons.notes_rounded, AppViewMode.notes, '笔记'),
-          _navIcon(Icons.view_stream_rounded, AppViewMode.feed, '信息流'),
-          _navIcon(Icons.travel_explore_rounded, AppViewMode.explore, 'Explore'),
-          _navIcon(Icons.calendar_month_rounded, AppViewMode.calendar, '日历'),
-        ],
-      ),
-    );
-  }
-
-  Widget _navIcon(IconData icon, AppViewMode m, String tip) {
-    final selected = mode == m;
-    return IconButton(
-      tooltip: tip,
-      isSelected: selected,
-      onPressed: () => onMode(m),
-      icon: Icon(icon),
-    );
-  }
-}
-
-class _SyncChip extends ConsumerWidget {
-  const _SyncChip({required this.snapshot, required this.workspace});
-
-  final SyncStatusSnapshot? snapshot;
-  final Workspace workspace;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final s = snapshot ?? const SyncStatusSnapshot.idle();
-    final scheme = Theme.of(context).colorScheme;
-    final (icon, label) = switch (s.state) {
-      GlobalSyncState.syncing => (Icons.sync_rounded, '同步中'),
-      GlobalSyncState.offline => (Icons.cloud_off_rounded, '离线'),
-      GlobalSyncState.authRequired => (Icons.lock_outline, '需登录'),
-      GlobalSyncState.error => (Icons.error_outline, '同步异常'),
-      GlobalSyncState.idle => (
-          Icons.cloud_done_outlined,
-          s.pendingCount > 0 ? '${s.pendingCount} 待同步' : '已同步',
-        ),
-    };
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: ActionChip(
-        avatar: Icon(icon, size: 16, color: scheme.primary),
-        label: Text(label),
-        visualDensity: VisualDensity.compact,
-        onPressed: () => ref.read(syncServiceProvider).syncNow(workspace),
-        tooltip: s.lastPullAt == null
-            ? '点击立即同步'
-            : '上次同步 ${_ago(s.lastPullAt!)} · 点击立即同步',
-      ),
-    );
-  }
-
-  String _ago(DateTime t) {
-    final d = DateTime.now().difference(t);
-    if (d.inSeconds < 60) return '刚刚';
-    if (d.inMinutes < 60) return '${d.inMinutes} 分钟前';
-    if (d.inHours < 24) return '${d.inHours} 小时前';
-    return '${d.inDays} 天前';
   }
 }

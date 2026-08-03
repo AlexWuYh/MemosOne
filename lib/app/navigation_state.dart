@@ -11,7 +11,8 @@ enum AppViewMode {
 final appViewModeProvider =
     StateProvider<AppViewMode>((ref) => AppViewMode.notes);
 
-final workspaceRailCollapsedProvider = StateProvider<bool>((ref) => false);
+/// When true, the workspace list panel is hidden (icon-rail only).
+final workspaceRailCollapsedProvider = StateProvider<bool>((ref) => true);
 
 final memoListCollapsedProvider = StateProvider<bool>((ref) => false);
 
