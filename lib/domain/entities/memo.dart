@@ -145,15 +145,54 @@ class MemoQuery {
     this.includeArchived = false,
     this.onlyPinned = false,
     this.onlyArchived = false,
+    this.onlyPublic = false,
     this.tag,
     this.searchText,
+    this.day,
   });
 
   final bool includeArchived;
   final bool onlyPinned;
   final bool onlyArchived;
+  final bool onlyPublic;
   final String? tag;
   final String? searchText;
+
+  /// Filter by local calendar day of [Memo.updatedAtLocal] (date only).
+  final DateTime? day;
+
+  MemoQuery copyWith({
+    bool? includeArchived,
+    bool? onlyPinned,
+    bool? onlyArchived,
+    bool? onlyPublic,
+    String? tag,
+    String? searchText,
+    DateTime? day,
+    bool clearDay = false,
+    bool clearTag = false,
+    bool clearSearch = false,
+  }) {
+    return MemoQuery(
+      includeArchived: includeArchived ?? this.includeArchived,
+      onlyPinned: onlyPinned ?? this.onlyPinned,
+      onlyArchived: onlyArchived ?? this.onlyArchived,
+      onlyPublic: onlyPublic ?? this.onlyPublic,
+      tag: clearTag ? null : (tag ?? this.tag),
+      searchText: clearSearch ? null : (searchText ?? this.searchText),
+      day: clearDay ? null : (day ?? this.day),
+    );
+  }
+}
+
+/// Build a public explore URL for a memo on a Memos instance.
+String memosPublicUrl(String serverBaseUrl, String? serverName) {
+  final base = serverBaseUrl.replaceAll(RegExp(r'/+$'), '');
+  if (serverName == null || serverName.isEmpty) return base;
+  final id = serverName.contains('/')
+      ? serverName.split('/').last
+      : serverName;
+  return '$base/m/$id';
 }
 
 class MemoHistoryEntry {

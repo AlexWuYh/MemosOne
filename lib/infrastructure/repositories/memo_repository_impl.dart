@@ -166,6 +166,16 @@ class MemoRepositoryImpl implements MemoRepository, SyncMemoGateway {
         if (!query.includeArchived && !query.onlyArchived && r.archived) {
           return false;
         }
+        if (query.onlyPublic && r.visibility != MemoVisibility.public.name) {
+          return false;
+        }
+        if (query.day != null) {
+          final d = query.day!;
+          final start = DateTime(d.year, d.month, d.day);
+          final end = start.add(const Duration(days: 1));
+          final t = r.updatedAtLocal;
+          if (t.isBefore(start) || !t.isBefore(end)) return false;
+        }
         return true;
       }).toList();
 
@@ -187,6 +197,29 @@ class MemoRepositoryImpl implements MemoRepository, SyncMemoGateway {
       }
       return result;
     });
+  }
+
+  /// Day → count of memos updated that local day (for calendar heatmap).
+  Future<Map<DateTime, int>> activityByDay(
+    String workspaceId, {
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final rows = await (_db.select(_db.memos)
+          ..where((t) => t.workspaceId.equals(workspaceId)))
+        .get();
+    final map = <DateTime, int>{};
+    final start = DateTime(from.year, from.month, from.day);
+    final end = DateTime(to.year, to.month, to.day)
+        .add(const Duration(days: 1));
+    for (final r in rows) {
+      if (r.deletedAt != null) continue;
+      final t = r.updatedAtLocal;
+      if (t.isBefore(start) || !t.isBefore(end)) continue;
+      final day = DateTime(t.year, t.month, t.day);
+      map[day] = (map[day] ?? 0) + 1;
+    }
+    return map;
   }
 
   @override

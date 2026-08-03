@@ -124,7 +124,23 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
             ],
           ),
         ),
-        const SizedBox(height: 10),
+        if (filter.day != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: InputChip(
+                label: Text(
+                  '日期 ${filter.day!.year}-${filter.day!.month.toString().padLeft(2, '0')}-${filter.day!.day.toString().padLeft(2, '0')}',
+                ),
+                onDeleted: () {
+                  ref.read(memoFilterProvider.notifier).state =
+                      filter.copyWith(clearDay: true);
+                },
+              ),
+            ),
+          ),
+        const SizedBox(height: 4),
         Expanded(
           child: memosAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),

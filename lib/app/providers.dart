@@ -253,14 +253,11 @@ final activeWorkspaceProvider = Provider<Workspace?>((ref) {
   return list.first;
 });
 
-/// True when user has completed first-run connect OR has any workspace.
+/// True when there is no workspace yet (failed login should not leave orphans).
 final needsOnboardingProvider = Provider<bool>((ref) {
-  final prefs = ref.watch(preferencesStoreProvider);
   final workspaces = ref.watch(workspacesProvider);
   if (workspaces.isLoading) return false;
   final list = workspaces.valueOrNull ?? const [];
-  if (list.isEmpty && !prefs.onboardingDone) return true;
-  // No Memos cloud yet and only local? Still allow home; onboarding optional.
   return list.isEmpty;
 });
 

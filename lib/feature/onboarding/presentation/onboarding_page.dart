@@ -37,11 +37,20 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       _busy = true;
       _error = null;
     });
+    String? createdWorkspaceId;
     try {
       final url = _url.text.trim();
       if (url.isEmpty || !url.startsWith('http')) {
         throw const ValidationFailure('请输入有效的服务器地址（https://…）');
       }
+      if (_useToken && _token.text.trim().isEmpty) {
+        throw const ValidationFailure('请粘贴 Access Token');
+      }
+      if (!_useToken &&
+          (_user.text.trim().isEmpty || _pass.text.isEmpty)) {
+        throw const ValidationFailure('请输入用户名和密码');
+      }
+
       final wsRepo = ref.read(workspaceRepositoryProvider);
       final name = Uri.tryParse(url)?.host ?? 'Memos';
       final ws = await wsRepo.createMemos(
@@ -49,17 +58,15 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
         serverBaseUrl: url,
         allowInsecureTls: _insecure,
       );
-      await ref.read(activeWorkspaceIdProvider.notifier).select(ws.localId);
+      createdWorkspaceId = ws.localId;
 
+      // Authenticate BEFORE treating onboarding as done / navigating home.
       if (_useToken) {
         await ref.read(authRepositoryProvider).loginWithAccessToken(
               workspace: ws,
               accessToken: _token.text,
             );
       } else {
-        if (_user.text.trim().isEmpty || _pass.text.isEmpty) {
-          throw const ValidationFailure('请输入用户名和密码');
-        }
         await ref.read(authRepositoryProvider).login(
               workspace: ws,
               username: _user.text.trim(),
@@ -67,22 +74,54 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
             );
       }
 
+      await ref.read(activeWorkspaceIdProvider.notifier).select(ws.localId);
       final latest = await wsRepo.get(ws.localId);
       if (latest != null) {
         ref.read(syncWorkerProvider).clearAuthBlock(latest.localId);
-        await ref.read(syncServiceProvider).syncNow(latest);
+        try {
+          await ref.read(syncServiceProvider).syncNow(latest);
+        } catch (e) {
+          // Login succeeded; sync can fail offline — still enter app.
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  '已登录，但首次同步失败：${e is AppFailure ? e.message : e}',
+                ),
+              ),
+            );
+          }
+        }
       }
 
       await ref.read(preferencesStoreProvider).setOnboardingDone(true);
+      createdWorkspaceId = null; // success — do not roll back
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('已连接并完成首次同步，可离线继续使用')),
         );
       }
     } catch (e) {
-      setState(() {
-        _error = e is AppFailure ? e.message : e.toString();
-      });
+      // Roll back half-created workspace so user stays on onboarding.
+      if (createdWorkspaceId != null) {
+        try {
+          await ref
+              .read(workspaceRepositoryProvider)
+              .delete(createdWorkspaceId, wipeData: true);
+          await ref.read(activeWorkspaceIdProvider.notifier).select(null);
+        } catch (_) {}
+      }
+      final msg = e is AppFailure ? e.message : e.toString();
+      if (mounted) {
+        setState(() => _error = msg);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Theme.of(context).colorScheme.error,
+            content: Text(msg, style: const TextStyle(color: Colors.white)),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -100,7 +139,11 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       await ref.read(activeWorkspaceIdProvider.notifier).select(ws.localId);
       await ref.read(preferencesStoreProvider).setOnboardingDone(true);
     } catch (e) {
-      setState(() => _error = e.toString());
+      final msg = e.toString();
+      setState(() => _error = msg);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -124,10 +167,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                     width: 72,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [
-                          scheme.primary,
-                          scheme.tertiary,
-                        ],
+                        colors: [scheme.primary, scheme.tertiary],
                       ),
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [
@@ -235,9 +275,19 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                     ],
                     if (_error != null) ...[
                       const SizedBox(height: 12),
-                      Text(
-                        _error!,
-                        style: TextStyle(color: scheme.error, height: 1.35),
+                      Material(
+                        color: scheme.errorContainer,
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(
+                            _error!,
+                            style: TextStyle(
+                              color: scheme.onErrorContainer,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                     const SizedBox(height: 20),
@@ -253,7 +303,8 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                     ),
                     const SizedBox(height: 8),
                     TextButton(
-                      onPressed: _busy ? null : () => setState(() => _step = 0),
+                      onPressed:
+                          _busy ? null : () => setState(() => _step = 0),
                       child: const Text('返回'),
                     ),
                   ],

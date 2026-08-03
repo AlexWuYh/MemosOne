@@ -371,6 +371,35 @@ class MemosApiClient {
     }
   }
 
+  /// List public memos (Explore). Uses CEL filter when supported.
+  Future<List<RemoteMemoDto>> listPublicMemos({int maxPages = 20}) async {
+    final all = <RemoteMemoDto>[];
+    String? pageToken;
+    for (var i = 0; i < maxPages; i++) {
+      final page = await listMemosPage(
+        pageToken: pageToken,
+        pageSize: 50,
+        filter: 'visibility == "PUBLIC"',
+      );
+      all.addAll(page.memos);
+      pageToken = page.nextPageToken;
+      if (pageToken == null || pageToken.isEmpty) break;
+    }
+    // Fallback without filter if server ignored / returned empty while instance has public content.
+    if (all.isEmpty) {
+      pageToken = null;
+      for (var i = 0; i < maxPages; i++) {
+        final page = await listMemosPage(pageToken: pageToken, pageSize: 50);
+        all.addAll(
+          page.memos.where((m) => m.visibility == MemoVisibility.public),
+        );
+        pageToken = page.nextPageToken;
+        if (pageToken == null || pageToken.isEmpty) break;
+      }
+    }
+    return all;
+  }
+
   Future<({List<RemoteMemoDto> memos, String? nextPageToken})> listMemosPage({
     String? pageToken,
     int pageSize = 50,

@@ -122,9 +122,23 @@ class WorkspaceRail extends ConsumerWidget {
             if (active?.isMemos == true &&
                 active?.authState != WorkspaceAuthState.ok)
               ListTile(
-                leading: const Icon(Icons.login_rounded),
-                title: const Text('登录'),
-                onTap: () => showLoginDialog(context, ref, active!),
+                leading: Icon(
+                  Icons.login_rounded,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                title: Text(
+                  '登录',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                subtitle: const Text('当前未登录，点此输入账号/Token'),
+                onTap: () {
+                  final ws = active;
+                  if (ws == null) return;
+                  showLoginDialog(context, ref, ws);
+                },
               ),
             ListTile(
               leading: const Icon(Icons.settings_outlined),

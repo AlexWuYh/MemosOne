@@ -11,6 +11,7 @@ Future<void> showCreateWorkspaceDialog(
 ) async {
   await showDialog<void>(
     context: context,
+    useRootNavigator: true,
     builder: (ctx) => const _CreateWorkspaceDialog(),
   );
 }
@@ -61,12 +62,20 @@ class _CreateWorkspaceDialogState
         );
       }
       await ref.read(activeWorkspaceIdProvider.notifier).select(ws.localId);
-      if (mounted) Navigator.of(context).pop();
-      if (_type == WorkspaceType.memos && mounted) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      if (_type == WorkspaceType.memos) {
+        if (!mounted) return;
         await showLoginDialog(context, ref, ws);
       }
     } catch (e) {
-      setState(() => _error = e is AppFailure ? e.message : e.toString());
+      final msg = e is AppFailure ? e.message : e.toString();
+      setState(() => _error = msg);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg)),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -130,7 +139,9 @@ class _CreateWorkspaceDialogState
       ),
       actions: [
         TextButton(
-          onPressed: _busy ? null : () => Navigator.pop(context),
+          onPressed: _busy
+              ? null
+              : () => Navigator.of(context, rootNavigator: true).pop(),
           child: const Text('取消'),
         ),
         FilledButton(
@@ -155,6 +166,8 @@ Future<void> showLoginDialog(
 ) async {
   await showDialog<void>(
     context: context,
+    useRootNavigator: true,
+    barrierDismissible: false,
     builder: (ctx) => _LoginDialog(workspace: workspace),
   );
 }
@@ -191,11 +204,17 @@ class _LoginDialogState extends ConsumerState<_LoginDialog> {
     });
     try {
       if (_useToken) {
+        if (_token.text.trim().isEmpty) {
+          throw const ValidationFailure('请粘贴 Access Token');
+        }
         await ref.read(authRepositoryProvider).loginWithAccessToken(
               workspace: widget.workspace,
               accessToken: _token.text,
             );
       } else {
+        if (_user.text.trim().isEmpty || _pass.text.isEmpty) {
+          throw const ValidationFailure('请输入用户名和密码');
+        }
         await ref.read(authRepositoryProvider).login(
               workspace: widget.workspace,
               username: _user.text.trim(),
@@ -206,10 +225,29 @@ class _LoginDialogState extends ConsumerState<_LoginDialog> {
       final latest = await ref
           .read(workspaceRepositoryProvider)
           .get(widget.workspace.localId);
-      await ref.read(syncServiceProvider).syncNow(latest ?? widget.workspace);
-      if (mounted) Navigator.pop(context);
+      try {
+        await ref.read(syncServiceProvider).syncNow(latest ?? widget.workspace);
+      } catch (_) {
+        // login ok even if sync fails
+      }
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('登录成功')),
+        );
+      }
     } catch (e) {
-      setState(() => _error = e is AppFailure ? e.message : e.toString());
+      final msg = e is AppFailure ? e.message : e.toString();
+      if (mounted) {
+        setState(() => _error = msg);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Theme.of(context).colorScheme.error,
+            content: Text(msg, style: const TextStyle(color: Colors.white)),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -217,63 +255,76 @@ class _LoginDialogState extends ConsumerState<_LoginDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return AlertDialog(
       title: Text('登录 · ${widget.workspace.name}'),
       content: SizedBox(
-        width: 380,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              widget.workspace.serverBaseUrl ?? '',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 8),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('使用 Access Token'),
-              value: _useToken,
-              onChanged: (v) => setState(() => _useToken = v),
-            ),
-            if (_useToken)
-              TextField(
-                controller: _token,
-                decoration: const InputDecoration(
-                  labelText: 'Access Token',
-                ),
-                obscureText: true,
-              )
-            else ...[
-              TextField(
-                controller: _user,
-                decoration: const InputDecoration(labelText: '用户名'),
-                autofillHints: const [AutofillHints.username],
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _pass,
-                decoration: const InputDecoration(labelText: '密码'),
-                obscureText: true,
-                autofillHints: const [AutofillHints.password],
-                onSubmitted: (_) => _submit(),
-              ),
-            ],
-            if (_error != null) ...[
-              const SizedBox(height: 8),
+        width: 400,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
               Text(
-                _error!,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                  height: 1.35,
-                ),
+                widget.workspace.serverBaseUrl ?? '',
+                style: Theme.of(context).textTheme.bodySmall,
               ),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('使用 Access Token'),
+                value: _useToken,
+                onChanged: (v) => setState(() => _useToken = v),
+              ),
+              if (_useToken)
+                TextField(
+                  controller: _token,
+                  decoration: const InputDecoration(
+                    labelText: 'Access Token',
+                  ),
+                  obscureText: true,
+                )
+              else ...[
+                TextField(
+                  controller: _user,
+                  decoration: const InputDecoration(labelText: '用户名'),
+                  autofillHints: const [AutofillHints.username],
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _pass,
+                  decoration: const InputDecoration(labelText: '密码'),
+                  obscureText: true,
+                  autofillHints: const [AutofillHints.password],
+                  onSubmitted: (_) => _submit(),
+                ),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Material(
+                  color: scheme.errorContainer,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Text(
+                      _error!,
+                      style: TextStyle(
+                        color: scheme.onErrorContainer,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
       actions: [
         TextButton(
-          onPressed: _busy ? null : () => Navigator.pop(context),
+          onPressed: _busy
+              ? null
+              : () => Navigator.of(context, rootNavigator: true).pop(),
           child: const Text('取消'),
         ),
         FilledButton(
