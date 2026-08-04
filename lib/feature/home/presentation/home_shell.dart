@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/navigation_state.dart';
 import '../../../app/providers.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_logo.dart';
 import '../../../domain/entities/memo.dart';
 import '../../../domain/entities/sync_models.dart';
 import '../../../domain/entities/workspace.dart';
@@ -225,21 +226,9 @@ class _PrimaryRail extends StatelessWidget {
         child: Column(
           children: [
             const SizedBox(height: 12),
-            Tooltip(
+            const Tooltip(
               message: 'Memos One',
-              child: Container(
-                height: 36,
-                width: 36,
-                decoration: BoxDecoration(
-                  color: AppTheme.accentSoft,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.auto_stories_rounded,
-                  size: 20,
-                  color: AppTheme.accent,
-                ),
-              ),
+              child: AppLogo(size: 36),
             ),
             const SizedBox(height: 18),
             _RailItem(

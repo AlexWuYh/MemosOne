@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/providers.dart';
 import '../../../core/errors/app_failure.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_logo.dart';
 
 /// First-run connect flow. Never leaves until [onboardingDoneProvider] is true.
 class OnboardingPage extends ConsumerStatefulWidget {
@@ -213,22 +214,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Align(
+                  const Align(
                     alignment: Alignment.centerLeft,
-                    child: Container(
-                      height: 60,
-                      width: 60,
-                      decoration: BoxDecoration(
-                        color: AppTheme.accentSoft,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppTheme.line),
-                      ),
-                      child: const Icon(
-                        Icons.auto_stories_rounded,
-                        color: AppTheme.accent,
-                        size: 28,
-                      ),
-                    ),
+                    child: AppLogo(size: 64, borderRadius: 16),
                   ),
                   const SizedBox(height: 28),
                   const Text(

@@ -186,13 +186,17 @@ class MemoQuery {
 }
 
 /// Build a public explore URL for a memo on a Memos instance.
+///
+/// Web path is `/memos/{uid}` (not `/m/{uid}`). Resource names from the API
+/// look like `memos/{uid}`; we join that onto the instance origin.
 String memosPublicUrl(String serverBaseUrl, String? serverName) {
   final base = serverBaseUrl.replaceAll(RegExp(r'/+$'), '');
   if (serverName == null || serverName.isEmpty) return base;
-  final id = serverName.contains('/')
-      ? serverName.split('/').last
-      : serverName;
-  return '$base/m/$id';
+  final name = serverName.replaceAll(RegExp(r'^/+'), '');
+  // Already a resource name: memos/{uid}
+  if (name.startsWith('memos/')) return '$base/$name';
+  // Bare uid
+  return '$base/memos/$name';
 }
 
 class MemoHistoryEntry {

@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../app/providers.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_logo.dart';
 import '../../../domain/entities/memo.dart';
 import '../../../domain/entities/sync_models.dart';
 import '../../../domain/entities/workspace.dart';
@@ -987,6 +988,7 @@ class _AboutPane extends StatelessWidget {
             title: '应用',
             children: [
               const ListTile(
+                leading: AppLogo(size: 44, borderRadius: 12),
                 title: Text(AppConstants.appName),
                 subtitle: Text(AppConstants.appTagline),
               ),
