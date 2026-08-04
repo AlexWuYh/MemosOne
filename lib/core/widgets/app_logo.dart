@@ -2,55 +2,55 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// In-app brand mark — hand-drawn Memos bird on pure white.
+/// Brand mark — AppFlowy-style memo card icon (asset already rounded).
 class AppLogo extends StatelessWidget {
   const AppLogo({
     super.key,
     this.size = 56,
     this.borderRadius,
-    this.padded = true,
+    this.padded = false,
     this.showBorder = false,
   });
 
-  /// Outer box size.
   final double size;
-
-  /// Corner radius (null = soft radius from size).
   final double? borderRadius;
-
-  /// Inner padding so the bird stays readable.
   final bool padded;
-
-  /// Optional hairline border (off by default on white canvas).
   final bool showBorder;
 
   static const assetPath = 'assets/icons/app_logo_sketch.png';
 
   @override
   Widget build(BuildContext context) {
-    final radius = borderRadius ?? (size * 0.2).clamp(10.0, 20.0);
+    final radius = borderRadius ?? (size * 0.22).clamp(6.0, 14.0);
     final pad = padded ? size * 0.04 : 0.0;
 
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: showBorder ? AppTheme.paperElevated : Colors.transparent,
         borderRadius: BorderRadius.circular(radius),
         border: showBorder
-            ? Border.all(color: AppTheme.line.withValues(alpha: 0.9))
+            ? Border.all(color: AppTheme.line, width: 1)
             : null,
       ),
       clipBehavior: Clip.antiAlias,
       padding: EdgeInsets.all(pad),
       child: Image.asset(
         assetPath,
-        fit: BoxFit.contain,
+        fit: BoxFit.cover,
         filterQuality: FilterQuality.medium,
-        errorBuilder: (_, __, ___) => Icon(
-          Icons.auto_stories_rounded,
-          color: AppTheme.accent,
-          size: size * 0.45,
+        errorBuilder: (_, __, ___) => Container(
+          decoration: BoxDecoration(
+            color: AppTheme.accentSoft,
+            borderRadius: BorderRadius.circular(radius),
+          ),
+          alignment: Alignment.center,
+          child: Icon(
+            Icons.sticky_note_2_outlined,
+            color: AppTheme.accent,
+            size: size * 0.45,
+          ),
         ),
       ),
     );

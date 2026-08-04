@@ -96,8 +96,8 @@ class PreferencesStore {
 
   Color get accentColor {
     final value = _prefs.getInt(_accentKey);
-    // Warm indigo — closer to notes / Memos calm aesthetic
-    if (value == null) return const Color(0xFF5B6CFF);
+    // AppFlowy-like calm workspace blue
+    if (value == null) return const Color(0xFF00B5FF);
     return Color(value);
   }
 

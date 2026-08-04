@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 import '../theme/app_theme.dart';
 
-/// Shared feed/Explore card: short preview, white surface, no heavy shadow.
+/// Soft workspace card — light border, no hard shadow (AppFlowy-like).
 class MemoSnippetCard extends StatelessWidget {
   const MemoSnippetCard({
     super.key,
@@ -44,11 +45,13 @@ class MemoSnippetCard extends StatelessWidget {
     return Material(
       color: AppTheme.paperElevated,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
         side: const BorderSide(color: AppTheme.line),
       ),
+      elevation: 0,
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        hoverColor: AppTheme.surfaceMuted.withValues(alpha: 0.6),
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
@@ -59,7 +62,7 @@ class MemoSnippetCard extends StatelessWidget {
                 children: [
                   if (pinned) ...[
                     const Icon(
-                      Icons.push_pin_rounded,
+                      Icons.push_pin_outlined,
                       size: 14,
                       color: AppTheme.accent,
                     ),
@@ -70,10 +73,10 @@ class MemoSnippetCard extends StatelessWidget {
                   else if (timestamp != null)
                     Text(
                       DateFormat('yyyy/MM/dd HH:mm').format(timestamp!),
-                      style: const TextStyle(
+                      style: GoogleFonts.inter(
                         fontSize: 12,
                         color: AppTheme.inkMuted,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w400,
                       ),
                     )
                   else
@@ -83,73 +86,78 @@ class MemoSnippetCard extends StatelessWidget {
                     Container(
                       margin: const EdgeInsets.only(left: 8),
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
+                        horizontal: 7,
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
                         color: AppTheme.warningSoft,
-                        borderRadius: BorderRadius.circular(999),
+                        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                       ),
-                      child: const Text(
+                      child: Text(
                         '待同步',
-                        style: TextStyle(
+                        style: GoogleFonts.inter(
                           fontSize: 11,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w500,
                           color: AppTheme.warning,
                         ),
                       ),
                     ),
-                  if (isPublic) ...[
-                    const SizedBox(width: 8),
-                    const Icon(
-                      Icons.public,
-                      size: 14,
-                      color: AppTheme.inkMuted,
+                  if (isPublic)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 6),
+                      child: Icon(
+                        Icons.public_outlined,
+                        size: 14,
+                        color: AppTheme.inkSubtle,
+                      ),
                     ),
-                  ],
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               Text(
                 preview,
-                maxLines: 3,
+                maxLines: 4,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      height: 1.45,
-                      color: AppTheme.ink,
-                      fontWeight: FontWeight.w500,
-                    ),
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  height: 1.5,
+                  color: AppTheme.ink,
+                  fontWeight: FontWeight.w400,
+                ),
               ),
               if (tags.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 6,
                   runSpacing: 4,
-                  children: tags
-                      .take(6)
-                      .map(
-                        (t) => Text(
+                  children: [
+                    for (final t in tags.take(6))
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surfaceMuted,
+                          borderRadius:
+                              BorderRadius.circular(AppTheme.radiusSm),
+                        ),
+                        child: Text(
                           '#$t',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.accent,
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: AppTheme.inkMuted,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                      )
-                      .toList(),
+                      ),
+                  ],
                 ),
               ],
-              const SizedBox(height: 8),
-              footer ??
-                  const Text(
-                    '查看全文 →',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.accent,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+              if (footer != null) ...[
+                const SizedBox(height: 8),
+                footer!,
+              ],
             ],
           ),
         ),
@@ -158,13 +166,12 @@ class MemoSnippetCard extends StatelessWidget {
   }
 }
 
-/// Empty state: short copy + one primary action.
 class AppEmptyState extends StatelessWidget {
   const AppEmptyState({
     super.key,
     required this.title,
     this.subtitle,
-    this.icon = Icons.edit_note_rounded,
+    this.icon = Icons.sticky_note_2_outlined,
     this.actionLabel,
     this.onAction,
   });
@@ -183,29 +190,39 @@ class AppEmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 48, color: AppTheme.inkMuted.withValues(alpha: 0.7)),
-            const SizedBox(height: 14),
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceMuted,
+                borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+              ),
+              child: Icon(icon, size: 26, color: AppTheme.inkMuted),
+            ),
+            const SizedBox(height: 16),
             Text(
               title,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.ink,
-                  ),
+              style: GoogleFonts.inter(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.ink,
+              ),
             ),
             if (subtitle != null) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
                 subtitle!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppTheme.inkMuted,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
                   height: 1.45,
+                  color: AppTheme.inkMuted,
                 ),
               ),
             ],
             if (actionLabel != null && onAction != null) ...[
-              const SizedBox(height: 18),
+              const SizedBox(height: 16),
               FilledButton(onPressed: onAction, child: Text(actionLabel!)),
             ],
           ],

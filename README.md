@@ -65,4 +65,6 @@ Details: [`.ai/standards/development-standards.md`](.ai/standards/development-st
 
 ## License
 
-TBD (align with distribution goals; respect Memos upstream license when linking).
+[MIT](LICENSE) © 2026 AlexWuYh.
+
+Memos One is an independent client for [usememos/memos](https://github.com/usememos/memos) (also MIT). It is not affiliated with the Memos project.

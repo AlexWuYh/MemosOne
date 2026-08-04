@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../../app/navigation_state.dart';
 import '../../../app/providers.dart';
@@ -16,8 +17,9 @@ import '../../memo/presentation/memo_feed_panel.dart';
 import '../../memo/presentation/memo_list_panel.dart';
 import '../../setting/presentation/settings_page.dart';
 import '../../workspace/presentation/workspace_dialogs.dart';
-import '../../workspace/presentation/workspace_rail.dart';
 
+/// Single-cloud shell — AppFlowy-like workspace chrome.
+/// Soft sidebar, flat content, calm dividers. No floating brutal panels.
 class HomeShell extends ConsumerWidget {
   const HomeShell({super.key});
 
@@ -34,21 +36,6 @@ class HomeShell extends ConsumerWidget {
     ref.read(memoListCollapsedProvider.notifier).state = false;
   }
 
-  void _showWorkspaces(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppTheme.paperElevated,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => const SizedBox(
-        height: 520,
-        child: WorkspaceRail(),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final width = MediaQuery.sizeOf(context).width;
@@ -56,8 +43,6 @@ class HomeShell extends ConsumerWidget {
     final active = ref.watch(activeWorkspaceProvider);
     final mode = ref.watch(appViewModeProvider);
     final listCollapsed = ref.watch(memoListCollapsedProvider);
-    // true = hide workspace list panel (icon-rail only)
-    final workspaceHidden = ref.watch(workspaceRailCollapsedProvider);
     final sync = ref.watch(syncStatusProvider).valueOrNull;
     final selectedId = ref.watch(selectedMemoIdProvider);
     final needsLogin = active?.isMemos == true &&
@@ -97,33 +82,26 @@ class HomeShell extends ConsumerWidget {
         child: Scaffold(
           backgroundColor: AppTheme.paper,
           body: active == null
-              ? Center(
-                  child: FilledButton(
-                    onPressed: () => _showWorkspaces(context),
-                    child: const Text('添加工作区'),
-                  ),
+              ? _NoConnection(
+                  onConnect: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const SettingsPage(),
+                      ),
+                    );
+                  },
                 )
               : Row(
                   children: [
-                    // —— Primary icon rail (signature navigation) ——
                     _PrimaryRail(
                       mode: mode,
                       onMode: (m) {
                         ref.read(appViewModeProvider.notifier).state = m;
-                        // Feed is a browse stream — always start from the list.
                         if (m == AppViewMode.feed) {
                           ref.read(selectedMemoIdProvider.notifier).state =
                               null;
                         }
                       },
-                      onToggleWorkspace: isWide
-                          ? () {
-                              ref
-                                  .read(workspaceRailCollapsedProvider.notifier)
-                                  .state = !workspaceHidden;
-                            }
-                          : () => _showWorkspaces(context),
-                      workspaceOpen: isWide && !workspaceHidden,
                       onSettings: () {
                         Navigator.of(context).push(
                           MaterialPageRoute<void>(
@@ -133,64 +111,110 @@ class HomeShell extends ConsumerWidget {
                       },
                       onNew: () => _newMemo(ref),
                     ),
-                    // —— Optional workspace list ——
-                    if (isWide && !workspaceHidden) ...[
-                      const VerticalDivider(width: 1),
-                      const SizedBox(width: 240, child: WorkspaceRail()),
-                    ],
-                    const VerticalDivider(width: 1),
-                    // —— Main content ——
+                    const VerticalDivider(width: 1, thickness: 1),
                     Expanded(
-                      child: Column(
-                        children: [
-                          _TopBar(
-                            active: active,
-                            sync: sync,
-                            needsLogin: needsLogin,
-                            mode: mode,
-                            listCollapsed: listCollapsed,
-                            showListToggle: isWide &&
-                                (mode == AppViewMode.notes ||
-                                    mode == AppViewMode.calendar),
-                            onToggleList: () {
-                              ref
-                                  .read(memoListCollapsedProvider.notifier)
-                                  .state = !listCollapsed;
-                            },
-                            onLogin: () =>
-                                showLoginDialog(context, ref, active),
-                            onSync: () {
-                              if (active.isMemos) {
+                      child: ColoredBox(
+                        color: AppTheme.paperElevated,
+                        child: Column(
+                          children: [
+                            _TopBar(
+                              active: active,
+                              sync: sync,
+                              needsLogin: needsLogin,
+                              mode: mode,
+                              listCollapsed: listCollapsed,
+                              showListToggle: isWide &&
+                                  (mode == AppViewMode.notes ||
+                                      mode == AppViewMode.calendar),
+                              onToggleList: () {
                                 ref
-                                    .read(syncServiceProvider)
-                                    .syncNow(active);
-                              }
-                            },
-                            onNew: () => _newMemo(ref),
-                          ),
-                          const Divider(height: 1),
-                          Expanded(
-                            child: isWide
-                                ? _WideContent(
-                                    mode: mode,
-                                    listCollapsed: listCollapsed,
-                                  )
-                                : _NarrowContent(
-                                    mode: mode,
-                                    selectedId: selectedId,
-                                  ),
-                          ),
-                        ],
+                                    .read(memoListCollapsedProvider.notifier)
+                                    .state = !listCollapsed;
+                              },
+                              onLogin: () =>
+                                  showLoginDialog(context, ref, active),
+                              onSync: () {
+                                if (active.isMemos) {
+                                  ref
+                                      .read(syncServiceProvider)
+                                      .syncNow(active);
+                                }
+                              },
+                              onNew: () => _newMemo(ref),
+                            ),
+                            const Divider(height: 1, thickness: 1),
+                            Expanded(
+                              child: isWide
+                                  ? _WideContent(
+                                      mode: mode,
+                                      listCollapsed: listCollapsed,
+                                    )
+                                  : _NarrowContent(
+                                      mode: mode,
+                                      selectedId: selectedId,
+                                    ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
                 ),
-          floatingActionButton: (!isWide)
+          floatingActionButton: (!isWide && active != null)
               ? FloatingActionButton(
                   onPressed: () => _newMemo(ref),
-                  child: const Icon(Icons.edit_rounded),
+                  child: const Icon(Icons.add_rounded),
                 )
               : null,
+        ),
+      ),
+    );
+  }
+}
+
+class _NoConnection extends StatelessWidget {
+  const _NoConnection({required this.onConnect});
+
+  final VoidCallback onConnect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const AppLogo(size: 72),
+              const SizedBox(height: 24),
+              Text(
+                '连接你的 Memos',
+                style: GoogleFonts.inter(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.3,
+                  color: AppTheme.ink,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '一个云端实例，本地自动缓存。离线也能写，联网再同步。',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  height: 1.5,
+                  color: AppTheme.inkMuted,
+                ),
+              ),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: onConnect,
+                child: const Text('去连接'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -201,94 +225,74 @@ class _PrimaryRail extends StatelessWidget {
   const _PrimaryRail({
     required this.mode,
     required this.onMode,
-    required this.onToggleWorkspace,
-    required this.workspaceOpen,
     required this.onSettings,
     required this.onNew,
   });
 
   final AppViewMode mode;
   final ValueChanged<AppViewMode> onMode;
-  final VoidCallback onToggleWorkspace;
-  final bool workspaceOpen;
   final VoidCallback onSettings;
   final VoidCallback onNew;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 76,
-      decoration: const BoxDecoration(
-        color: AppTheme.paperElevated,
-        border: Border(right: BorderSide(color: AppTheme.line)),
-      ),
-      child: SafeArea(
-        child: Column(
-          children: [
-            const SizedBox(height: 14),
-            const Tooltip(
-              message: 'Memos One',
-              child: AppLogo(size: 58),
-            ),
-            const SizedBox(height: 16),
-            _RailItem(
-              icon: Icons.folder_outlined,
-              selectedIcon: Icons.folder_rounded,
-              label: '工作区',
-              selected: workspaceOpen,
-              onTap: onToggleWorkspace,
-            ),
-            const SizedBox(height: 6),
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-              height: 1,
-              color: AppTheme.line,
-            ),
-            _RailItem(
-              icon: Icons.notes_outlined,
-              selectedIcon: Icons.notes_rounded,
-              label: '笔记',
-              selected: mode == AppViewMode.notes,
-              onTap: () => onMode(AppViewMode.notes),
-            ),
-            _RailItem(
-              icon: Icons.view_day_outlined,
-              selectedIcon: Icons.view_day_rounded,
-              label: '信息流',
-              selected: mode == AppViewMode.feed,
-              onTap: () => onMode(AppViewMode.feed),
-            ),
-            _RailItem(
-              icon: Icons.public_outlined,
-              selectedIcon: Icons.public_rounded,
-              label: 'Explore',
-              selected: mode == AppViewMode.explore,
-              onTap: () => onMode(AppViewMode.explore),
-            ),
-            _RailItem(
-              icon: Icons.calendar_today_outlined,
-              selectedIcon: Icons.calendar_today_rounded,
-              label: '日历',
-              selected: mode == AppViewMode.calendar,
-              onTap: () => onMode(AppViewMode.calendar),
-            ),
-            const Spacer(),
-            _RailItem(
-              icon: Icons.add_circle_outline,
-              selectedIcon: Icons.add_circle,
-              label: '新建',
-              selected: false,
-              onTap: onNew,
-            ),
-            _RailItem(
-              icon: Icons.settings_outlined,
-              selectedIcon: Icons.settings_rounded,
-              label: '设置',
-              selected: false,
-              onTap: onSettings,
-            ),
-            const SizedBox(height: 12),
-          ],
+    return SizedBox(
+      width: 64,
+      child: ColoredBox(
+        color: AppTheme.paper,
+        child: SafeArea(
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              const AppLogo(size: 36, showBorder: false),
+              const SizedBox(height: 16),
+              _RailItem(
+                icon: Icons.notes_outlined,
+                selectedIcon: Icons.notes_rounded,
+                label: '笔记',
+                selected: mode == AppViewMode.notes,
+                onTap: () => onMode(AppViewMode.notes),
+              ),
+              _RailItem(
+                icon: Icons.view_day_outlined,
+                selectedIcon: Icons.view_day_rounded,
+                label: '信息流',
+                selected: mode == AppViewMode.feed,
+                onTap: () => onMode(AppViewMode.feed),
+              ),
+              _RailItem(
+                icon: Icons.public_outlined,
+                selectedIcon: Icons.public_rounded,
+                label: 'Explore',
+                selected: mode == AppViewMode.explore,
+                onTap: () => onMode(AppViewMode.explore),
+              ),
+              _RailItem(
+                icon: Icons.calendar_today_outlined,
+                selectedIcon: Icons.calendar_today_rounded,
+                label: '日历',
+                selected: mode == AppViewMode.calendar,
+                onTap: () => onMode(AppViewMode.calendar),
+              ),
+              const Spacer(),
+              _RailItem(
+                icon: Icons.add_rounded,
+                selectedIcon: Icons.add_rounded,
+                label: '新建',
+                selected: false,
+                accent: true,
+                onTap: onNew,
+              ),
+              _RailItem(
+                icon: Icons.settings_outlined,
+                selectedIcon: Icons.settings_rounded,
+                label: '设置',
+                selected: false,
+                onTap: onSettings,
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
         ),
       ),
     );
@@ -302,6 +306,7 @@ class _RailItem extends StatefulWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.accent = false,
   });
 
   final IconData icon;
@@ -309,6 +314,7 @@ class _RailItem extends StatefulWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final bool accent;
 
   @override
   State<_RailItem> createState() => _RailItemState();
@@ -320,32 +326,38 @@ class _RailItemState extends State<_RailItem> {
   @override
   Widget build(BuildContext context) {
     final selected = widget.selected;
+    final bg = widget.accent
+        ? AppTheme.accent
+        : selected
+            ? AppTheme.accentSoft
+            : _hover
+                ? AppTheme.surfaceHover
+                : Colors.transparent;
+    final fg = widget.accent
+        ? AppTheme.onAccent
+        : selected
+            ? AppTheme.accent
+            : AppTheme.inkMuted;
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 10),
       child: Tooltip(
         message: widget.label,
-        waitDuration: const Duration(milliseconds: 400),
         child: MouseRegion(
           onEnter: (_) => setState(() => _hover = true),
           onExit: (_) => setState(() => _hover = false),
           child: Material(
-            color: selected
-                ? AppTheme.accentSoft
-                : _hover
-                    ? AppTheme.surfaceHover
-                    : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
+            color: bg,
+            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
             child: InkWell(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
               onTap: widget.onTap,
-              child: AnimatedContainer(
-                duration: AppTheme.motionFast,
-                height: 44,
-                alignment: Alignment.center,
+              child: SizedBox(
+                height: 40,
                 child: Icon(
                   selected ? widget.selectedIcon : widget.icon,
-                  size: 22,
-                  color: selected ? AppTheme.accent : AppTheme.inkMuted,
+                  size: 20,
+                  color: fg,
                 ),
               ),
             ),
@@ -391,28 +403,37 @@ class _TopBar extends StatelessWidget {
     };
 
     return Container(
-      height: 52,
+      height: 48,
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      color: AppTheme.paper,
+      color: AppTheme.paperElevated,
       child: Row(
         children: [
           Text(
             title,
-            style: const TextStyle(
-              fontSize: 16,
+            style: GoogleFonts.inter(
+              fontSize: 15,
               fontWeight: FontWeight.w600,
-              letterSpacing: -0.3,
+              letterSpacing: -0.2,
               color: AppTheme.ink,
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Flexible(
-            child: Text(
-              active.name,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppTheme.inkMuted,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceMuted,
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+              ),
+              child: Text(
+                active.serverBaseUrl?.replaceFirst(RegExp(r'^https?://'), '') ??
+                    active.name,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                  color: AppTheme.inkMuted,
+                ),
               ),
             ),
           ),
@@ -420,11 +441,13 @@ class _TopBar extends StatelessWidget {
           if (showListToggle)
             IconButton(
               tooltip: listCollapsed ? '显示列表' : '隐藏列表',
+              visualDensity: VisualDensity.compact,
               onPressed: onToggleList,
               icon: Icon(
                 listCollapsed
                     ? Icons.vertical_split_outlined
                     : Icons.vertical_split,
+                size: 20,
                 color: AppTheme.inkMuted,
               ),
             ),
@@ -432,16 +455,16 @@ class _TopBar extends StatelessWidget {
             _SoftSync(snapshot: sync, onTap: onSync),
             if (needsLogin) ...[
               const SizedBox(width: 8),
-              FilledButton.tonal(
+              TextButton(
                 onPressed: onLogin,
                 child: const Text('登录'),
               ),
             ],
           ],
-          const SizedBox(width: 6),
+          const SizedBox(width: 8),
           FilledButton.icon(
             onPressed: onNew,
-            icon: const Icon(Icons.add, size: 18),
+            icon: const Icon(Icons.add, size: 16),
             label: const Text('新建'),
           ),
         ],
@@ -468,19 +491,19 @@ class _SoftSync extends StatelessWidget {
         ),
       GlobalSyncState.offline => (
           Icons.cloud_off_outlined,
-          '离线可编辑',
+          '离线',
           AppTheme.inkMuted,
           AppTheme.surfaceMuted,
         ),
       GlobalSyncState.authRequired => (
           Icons.lock_outline,
-          '需要登录',
+          '需登录',
           AppTheme.danger,
           AppTheme.dangerSoft,
         ),
       GlobalSyncState.error => (
           Icons.error_outline,
-          s.deadCount > 0 ? '${s.deadCount} 失败' : '同步异常',
+          s.deadCount > 0 ? '${s.deadCount} 失败' : '异常',
           AppTheme.danger,
           AppTheme.dangerSoft,
         ),
@@ -494,29 +517,29 @@ class _SoftSync extends StatelessWidget {
           : (
               Icons.cloud_done_outlined,
               '已同步',
-              AppTheme.accent,
-              AppTheme.accentSoft,
+              const Color(0xFF0D9488),
+              const Color(0xFFCCFBF1),
             ),
     };
 
     return Material(
       color: bg,
-      borderRadius: BorderRadius.circular(999),
+      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
       child: InkWell(
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 16, color: fg),
-              const SizedBox(width: 6),
+              Icon(icon, size: 15, color: fg),
+              const SizedBox(width: 5),
               Text(
                 label,
-                style: TextStyle(
+                style: GoogleFonts.inter(
                   fontSize: 12,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                   color: fg,
                 ),
               ),
@@ -544,14 +567,13 @@ class _WideContent extends StatelessWidget {
         return Row(
           children: [
             if (!listCollapsed) ...[
-              const SizedBox(width: 320, child: MemoListPanel()),
-              const VerticalDivider(width: 1),
+              const SizedBox(width: 300, child: MemoListPanel()),
+              const VerticalDivider(width: 1, thickness: 1),
             ],
             const Expanded(child: MemoDetailPanel()),
           ],
         );
       case AppViewMode.feed:
-        // Full-bleed feed; open full note only after tap (no side editor).
         return Consumer(
           builder: (context, ref, _) {
             final id = ref.watch(selectedMemoIdProvider);
@@ -568,8 +590,8 @@ class _WideContent extends StatelessWidget {
           children: [
             const Expanded(flex: 5, child: CalendarPanel()),
             if (!listCollapsed) ...[
-              const VerticalDivider(width: 1),
-              const SizedBox(width: 300, child: MemoListPanel(compact: true)),
+              const VerticalDivider(width: 1, thickness: 1),
+              const SizedBox(width: 280, child: MemoListPanel(compact: true)),
             ],
           ],
         );

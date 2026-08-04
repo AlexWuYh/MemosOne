@@ -11,9 +11,7 @@ enum AppViewMode {
 final appViewModeProvider =
     StateProvider<AppViewMode>((ref) => AppViewMode.notes);
 
-/// When true, the workspace list panel is hidden (icon-rail only).
-final workspaceRailCollapsedProvider = StateProvider<bool>((ref) => true);
-
+/// When true, the memo list column is collapsed (wide notes/calendar layout).
 final memoListCollapsedProvider = StateProvider<bool>((ref) => false);
 
 /// Calendar currently displayed month (first day of month).

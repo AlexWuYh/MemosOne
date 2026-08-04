@@ -1,8 +1,8 @@
 # Product Vision — Memos One
 
-> Version: 1.1  
+> Version: 1.2  
 > Status: Active  
-> Last updated: 2026-07-31
+> Last updated: 2026-08-04
 
 ## Positioning
 
@@ -25,12 +25,12 @@ Upstream: [https://github.com/usememos/memos](https://github.com/usememos/memos)
 | iOS      | No  | Planned |
 | Linux    | No  | Planned |
 
-## Workspace types
+## Connection model (single cloud)
 
 | Type | V1 | Description |
 | ---- | -- | ----------- |
-| **Memos Server (primary)** | Yes | Connect self-hosted Memos first; local SQLite is offline cache + SoT for UX; auto sync |
-| **Local-only** | Yes (secondary) | Pure SQLite; optional for users without a server |
+| **One Memos instance** | Yes | Connect a single self-hosted Memos; local SQLite is offline cache + SoT for UX |
+| **Multi-workspace rail** | No | Removed from primary UI — one connection is enough |
 | **Cloud Storage** (Git / WebDAV / S3) | No | Storage Adapter reserved; post-V1 |
 
 ### Cloud-first offline model (product rule)
@@ -38,15 +38,15 @@ Upstream: [https://github.com/usememos/memos](https://github.com/usememos/memos)
 1. **First launch** steers users to connect a Memos instance and complete first sync.
 2. After first sync, **offline edit is fully supported** (local SoT for UX).
 3. When network returns, **auto-sync** (configurable): on launch, on exit, on reconnect, on interval.
-4. Pure local workspace remains available as a secondary path, not the default narrative.
+4. UI presents **instance connection**, not a multi-workspace manager.
 
 ## Design principles
 
 1. **Never let the network gate UX** — save completes instantly; sync is background.
-2. **All product data lives locally** — memos, tags index, attachments metadata, settings, workspace, history.
+2. **All product data lives locally** — memos, tags index, attachments metadata, settings, history.
 3. **All network ops are retryable** — failure must not corrupt local state.
 4. **Server is a sync peer**, not the sole source of truth.
-5. **Stay recognizable as Memos** — minimal visual language, Material + notes-like density; ecosystem product, not a rebrand.
+5. **Youthful / design-forward** — not a traditional beige notebook clone; distinctive “Studio Pop” visual language while staying a Memos client.
 
 ## V1 success criteria (MVP)
 

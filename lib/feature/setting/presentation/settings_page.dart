@@ -75,7 +75,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           workspace: active,
           loggedIn: loggedIn,
         ),
-      _SettingsSection.workspace => _WorkspacePane(active: active),
+      _SettingsSection.workspace => _ConnectionPane(active: active),
       _SettingsSection.account => _AccountPane(
           workspace: active,
           loggedIn: loggedIn,
@@ -138,7 +138,7 @@ class _SettingsNav extends StatelessWidget {
       (_SettingsSection.appearance, Icons.palette_outlined, '外观'),
       (_SettingsSection.memo, Icons.edit_note_rounded, '笔记'),
       (_SettingsSection.sync, Icons.sync_rounded, '同步'),
-      (_SettingsSection.workspace, Icons.folder_outlined, '工作区'),
+      (_SettingsSection.workspace, Icons.cloud_outlined, '云端'),
       if (showAccount) (_SettingsSection.account, Icons.person_outline, '账户'),
       (_SettingsSection.about, Icons.info_outline, '关于'),
     ];
@@ -177,7 +177,7 @@ class _SettingsNav extends StatelessWidget {
             child: Text(
               AppConstants.appName,
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w600,
                     letterSpacing: -0.2,
                   ),
             ),
@@ -219,17 +219,17 @@ class _NavTile extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 4),
       child: Material(
         color: selected ? AppTheme.accentSoft : Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             child: Row(
               children: [
                 Icon(
                   icon,
-                  size: 20,
+                  size: 18,
                   color: selected ? AppTheme.accent : AppTheme.inkMuted,
                 ),
                 const SizedBox(width: 10),
@@ -237,7 +237,8 @@ class _NavTile extends StatelessWidget {
                   child: Text(
                     label,
                     style: TextStyle(
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                      fontSize: 13,
                       color: selected ? AppTheme.accent : AppTheme.ink,
                     ),
                   ),
@@ -285,8 +286,8 @@ class _Pane extends StatelessWidget {
         Text(
           title,
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.4,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.3,
               ),
         ),
         const SizedBox(height: 6),
@@ -314,10 +315,10 @@ class _CardBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
         color: AppTheme.paperElevated,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
         border: Border.all(color: AppTheme.line),
       ),
       child: Column(
@@ -328,16 +329,16 @@ class _CardBlock extends StatelessWidget {
             child: Text(
               title,
               style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-                letterSpacing: 0.2,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+                letterSpacing: 0.1,
                 color: AppTheme.inkMuted,
               ),
             ),
           ),
           if (child != null) child!,
           if (children != null) ...children!,
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
         ],
       ),
     );
@@ -395,12 +396,12 @@ class _AppearancePane extends ConsumerWidget {
                 spacing: 10,
                 runSpacing: 10,
                 children: [
-                  AppTheme.defaultSeed,
-                  AppTheme.accent,
+                  AppTheme.accent, // workspace blue
+                  AppTheme.secondary,
+                  AppTheme.mint,
                   const Color(0xFF0D9488),
-                  const Color(0xFFEA580C),
-                  const Color(0xFFDB2777),
-                  const Color(0xFF475569),
+                  const Color(0xFF7C3AED),
+                  const Color(0xFF64748B),
                 ].map((c) {
                   final selected = accent.toARGB32() == c.toARGB32();
                   return InkWell(
@@ -793,31 +794,35 @@ class _SyncPane extends ConsumerWidget {
   }
 }
 
-class _WorkspacePane extends ConsumerWidget {
-  const _WorkspacePane({required this.active});
+/// Single-cloud connection (product: one Memos instance, local cache).
+class _ConnectionPane extends ConsumerWidget {
+  const _ConnectionPane({required this.active});
 
   final Workspace? active;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return _Pane(
-      title: '工作区',
-      subtitle: '当前连接与本地缓存管理。',
+      title: '云端',
+      subtitle: '只连接一个 Memos 实例。本地是缓存，离线也能写。',
       child: active == null
           ? const _CardBlock(
               title: '状态',
-              child: ListTile(title: Text('尚未连接工作区')),
+              child: ListTile(
+                title: Text('尚未连接'),
+                subtitle: Text('从引导页或登录入口连接服务器'),
+              ),
             )
           : Column(
               children: [
                 _CardBlock(
-                  title: '当前工作区',
+                  title: '当前实例',
                   children: [
                     ListTile(
                       title: Text(active!.name),
                       subtitle: Text(
                         active!.isLocal
-                            ? '纯本地 · 不会上传'
+                            ? '仅本地缓存（建议连接云端）'
                             : '${active!.serverBaseUrl}\n${active!.username ?? '未登录'}',
                       ),
                       isThreeLine: !active!.isLocal,
@@ -843,17 +848,19 @@ class _WorkspacePane extends ConsumerWidget {
                   children: [
                     ListTile(
                       leading: const Icon(
-                        Icons.delete_forever_rounded,
+                        Icons.link_off_rounded,
                         color: AppTheme.danger,
                       ),
-                      title: const Text('删除工作区'),
-                      subtitle: const Text('清除本地缓存，不可撤销'),
+                      title: const Text('断开并清除本地缓存'),
+                      subtitle: const Text('会退出当前连接，本地笔记缓存不可恢复'),
                       onTap: () async {
                         final ok = await showDialog<bool>(
                           context: context,
                           builder: (ctx) => AlertDialog(
-                            title: const Text('删除工作区？'),
-                            content: const Text('本地缓存将被清除，无法撤销。'),
+                            title: const Text('断开连接？'),
+                            content: const Text(
+                              '将清除本机缓存的笔记数据。云端数据不受影响。',
+                            ),
                             actions: [
                               TextButton(
                                 onPressed: () => Navigator.pop(ctx, false),
@@ -861,7 +868,7 @@ class _WorkspacePane extends ConsumerWidget {
                               ),
                               FilledButton(
                                 onPressed: () => Navigator.pop(ctx, true),
-                                child: const Text('删除'),
+                                child: const Text('断开'),
                               ),
                             ],
                           ),
@@ -899,10 +906,10 @@ class _AccountPane extends ConsumerWidget {
     if (workspace == null || !workspace!.isMemos) {
       return const _Pane(
         title: '账户',
-        subtitle: '连接 Memos 云端工作区后可管理账户。',
+        subtitle: '连接 Memos 云端后可管理账户。',
         child: _CardBlock(
           title: '提示',
-          child: ListTile(title: Text('当前不是云端工作区')),
+          child: ListTile(title: Text('尚未连接云端')),
         ),
       );
     }

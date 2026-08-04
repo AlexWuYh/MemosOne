@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../../app/providers.dart';
 import '../../../core/errors/app_failure.dart';
@@ -158,7 +159,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       await ref.read(onboardingDoneProvider.notifier).markDone();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已跳过登录，可稍后在侧栏点击「登录」')),
+          const SnackBar(content: Text('已跳过登录，可稍后在设置中登录')),
         );
       }
     } catch (e) {
@@ -171,29 +172,30 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   Widget _errorBanner(String msg) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFCEBEA),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFF0B4AF)),
+        color: AppTheme.dangerSoft,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(color: AppTheme.danger.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             '登录失败',
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w600,
               color: AppTheme.danger,
+              fontSize: 13,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Text(
             msg,
-            style: const TextStyle(
+            style: GoogleFonts.inter(
               height: 1.4,
-              color: Color(0xFF7A271A),
-              fontSize: 13,
+              color: const Color(0xFF7A271A),
+              fontSize: 12,
             ),
           ),
         ],
@@ -208,77 +210,89 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
+            constraints: const BoxConstraints(maxWidth: 400),
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(28, 40, 28, 40),
+              padding: const EdgeInsets.fromLTRB(28, 48, 28, 40),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Align(
                     alignment: Alignment.centerLeft,
-                    child: AppLogo(size: 96, borderRadius: 22),
+                    child: AppLogo(size: 56, borderRadius: 12),
                   ),
-                  const SizedBox(height: 28),
-                  const Text(
+                  const SizedBox(height: 24),
+                  Text(
                     'Memos One',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.7,
+                    style: GoogleFonts.inter(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.4,
                       color: AppTheme.ink,
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    '连接服务器后，笔记会缓存在本地——离线也能写，联网自动同步。',
-                    style: TextStyle(
-                      fontSize: 15,
+                  Text(
+                    '连接 Memos 后，笔记缓存在本地——离线可写，联网同步。',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
                       height: 1.5,
                       color: AppTheme.inkMuted,
                     ),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 28),
                   if (_step == 0) ...[
                     _ChoiceCard(
                       icon: Icons.cloud_outlined,
                       title: '连接云端 Memos',
-                      subtitle: '推荐 · 登录并同步',
+                      subtitle: '推荐 · 登录并完成首次同步',
                       emphasized: true,
                       onTap: () => setState(() => _step = 1),
                     ),
                     const SizedBox(height: 10),
                     _ChoiceCard(
                       icon: Icons.phone_iphone_outlined,
-                      title: '仅本地使用',
+                      title: '先本地使用',
                       subtitle: '稍后再连接服务器',
                       onTap: _busy ? null : _skipToLocal,
                     ),
                   ] else ...[
                     if (_error != null) ...[
                       _errorBanner(_error!),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 14),
                     ],
                     TextField(
                       controller: _url,
                       decoration: const InputDecoration(
                         labelText: '服务器地址',
                         hintText: 'https://memos.example.com',
-                        prefixIcon: Icon(Icons.link),
+                        prefixIcon: Icon(Icons.link, size: 20),
                       ),
                       keyboardType: TextInputType.url,
                       autocorrect: false,
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 4),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('允许不安全 TLS'),
-                      subtitle: const Text('局域网自签名证书'),
+                      title: Text(
+                        '允许不安全 TLS',
+                        style: GoogleFonts.inter(fontSize: 14),
+                      ),
+                      subtitle: Text(
+                        '局域网自签名证书',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: AppTheme.inkMuted,
+                        ),
+                      ),
                       value: _insecure,
                       onChanged: (v) => setState(() => _insecure = v),
                     ),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('使用 Access Token'),
+                      title: Text(
+                        '使用 Access Token',
+                        style: GoogleFonts.inter(fontSize: 14),
+                      ),
                       value: _useToken,
                       onChanged: (v) => setState(() => _useToken = v),
                     ),
@@ -287,7 +301,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                         controller: _token,
                         decoration: const InputDecoration(
                           labelText: 'Access Token',
-                          prefixIcon: Icon(Icons.key_outlined),
+                          prefixIcon: Icon(Icons.key_outlined, size: 20),
                         ),
                         obscureText: true,
                       )
@@ -296,27 +310,27 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                         controller: _user,
                         decoration: const InputDecoration(
                           labelText: '用户名',
-                          prefixIcon: Icon(Icons.person_outline),
+                          prefixIcon: Icon(Icons.person_outline, size: 20),
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       TextField(
                         controller: _pass,
                         decoration: const InputDecoration(
                           labelText: '密码',
-                          prefixIcon: Icon(Icons.lock_outline),
+                          prefixIcon: Icon(Icons.lock_outline, size: 20),
                         ),
                         obscureText: true,
                         onSubmitted: (_) => _connect(),
                       ),
                     ],
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 18),
                     FilledButton(
                       onPressed: _busy ? null : _connect,
                       child: _busy
                           ? const SizedBox(
-                              width: 20,
-                              height: 20,
+                              width: 18,
+                              height: 18,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
                                 color: Colors.white,
@@ -325,18 +339,16 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                           : Text(_step == 2 ? '重试登录' : '连接并同步'),
                     ),
                     if (_step == 2) ...[
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 8),
                       OutlinedButton(
                         onPressed: _busy ? null : _skipLoginLater,
                         child: const Text('跳过登录，稍后再登录'),
                       ),
-                      const SizedBox(height: 6),
                       TextButton(
                         onPressed: _busy ? null : _skipToLocal,
                         child: const Text('改为仅本地使用'),
                       ),
                     ],
-                    const SizedBox(height: 8),
                     TextButton(
                       onPressed: _busy
                           ? null
@@ -376,47 +388,60 @@ class _ChoiceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: emphasized ? AppTheme.accentSoft : AppTheme.paperElevated,
+      elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
         side: BorderSide(
           color: emphasized
-              ? AppTheme.accent.withValues(alpha: 0.35)
+              ? AppTheme.accent.withValues(alpha: 0.25)
               : AppTheme.line,
         ),
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(14),
           child: Row(
             children: [
-              Icon(icon, color: AppTheme.accent),
-              const SizedBox(width: 14),
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: emphasized ? AppTheme.accent : AppTheme.surfaceMuted,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                ),
+                child: Icon(
+                  icon,
+                  size: 20,
+                  color: emphasized ? AppTheme.onAccent : AppTheme.inkMuted,
+                ),
+              ),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
+                      style: GoogleFonts.inter(
                         fontWeight: FontWeight.w600,
-                        fontSize: 15,
+                        fontSize: 14,
                         color: AppTheme.ink,
                       ),
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 2),
                     Text(
                       subtitle,
-                      style: const TextStyle(
-                        fontSize: 13,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
                         color: AppTheme.inkMuted,
                       ),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: AppTheme.inkMuted),
+              const Icon(Icons.chevron_right, color: AppTheme.inkSubtle),
             ],
           ),
         ),

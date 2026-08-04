@@ -274,20 +274,18 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
                   final selected = memo.localId == selectedId;
                   return Material(
                     color: selected
-                        ? AppTheme.accentSoft.withValues(alpha: 0.65)
-                        : AppTheme.paper,
+                        ? AppTheme.accentSoft
+                        : AppTheme.paperElevated,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      side: BorderSide(
-                        color: selected
-                            ? AppTheme.accent.withValues(alpha: 0.35)
-                            : AppTheme.line,
-                      ),
+                      borderRadius:
+                          BorderRadius.circular(AppTheme.radiusMd),
                     ),
                     clipBehavior: Clip.antiAlias,
                     child: InkWell(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius:
+                          BorderRadius.circular(AppTheme.radiusMd),
+                      hoverColor: AppTheme.surfaceHover,
                       onTap: () {
                         ref.read(selectedMemoIdProvider.notifier).state =
                             memo.localId;
@@ -297,7 +295,6 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            // Selection accent bar
                             AnimatedContainer(
                               duration: AppTheme.motionFast,
                               width: 3,
@@ -308,7 +305,7 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
                             Expanded(
                               child: Padding(
                                 padding:
-                                    const EdgeInsets.fromLTRB(12, 12, 14, 12),
+                                    const EdgeInsets.fromLTRB(10, 10, 12, 10),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -318,8 +315,8 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
                                           const Padding(
                                             padding: EdgeInsets.only(right: 6),
                                             child: Icon(
-                                              Icons.push_pin_rounded,
-                                              size: 14,
+                                              Icons.push_pin_outlined,
+                                              size: 13,
                                               color: AppTheme.accent,
                                             ),
                                           ),
@@ -330,10 +327,12 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
                                             overflow: TextOverflow.ellipsis,
                                             style: Theme.of(context)
                                                 .textTheme
-                                                .bodyLarge
+                                                .bodyMedium
                                                 ?.copyWith(
-                                                  fontWeight: FontWeight.w500,
-                                                  height: 1.35,
+                                                  fontWeight: selected
+                                                      ? FontWeight.w600
+                                                      : FontWeight.w500,
+                                                  height: 1.4,
                                                   color: AppTheme.ink,
                                                 ),
                                           ),
@@ -343,26 +342,28 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
                                             margin:
                                                 const EdgeInsets.only(left: 8),
                                             padding: const EdgeInsets.symmetric(
-                                              horizontal: 7,
+                                              horizontal: 6,
                                               vertical: 2,
                                             ),
                                             decoration: BoxDecoration(
                                               color: AppTheme.warningSoft,
                                               borderRadius:
-                                                  BorderRadius.circular(999),
+                                                  BorderRadius.circular(
+                                                AppTheme.radiusSm,
+                                              ),
                                             ),
                                             child: const Text(
                                               '待同步',
                                               style: TextStyle(
                                                 fontSize: 10,
                                                 color: AppTheme.warning,
-                                                fontWeight: FontWeight.w600,
+                                                fontWeight: FontWeight.w500,
                                               ),
                                             ),
                                           ),
                                       ],
                                     ),
-                                    const SizedBox(height: 8),
+                                    const SizedBox(height: 6),
                                     Text(
                                       DateFormat('yyyy/MM/dd HH:mm')
                                               .format(memo.updatedAtLocal) +
@@ -408,15 +409,19 @@ class _FilterPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return ChoiceChip(
       label: Text(label),
       selected: selected,
       onSelected: (_) => onTap(),
-      selectedColor: scheme.primaryContainer,
+      selectedColor: AppTheme.accentSoft,
+      backgroundColor: AppTheme.surfaceMuted,
+      side: BorderSide(
+        color: selected ? AppTheme.accent.withValues(alpha: 0.35) : AppTheme.line,
+      ),
       labelStyle: TextStyle(
         fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-        color: selected ? scheme.onPrimaryContainer : scheme.onSurface,
+        fontSize: 12,
+        color: selected ? AppTheme.accent : AppTheme.inkMuted,
       ),
     );
   }
