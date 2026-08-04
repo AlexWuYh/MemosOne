@@ -110,13 +110,33 @@ class SyncWorker implements SyncService {
   }
 
   @override
-  Future<List<SyncTask>> listDeadTasks(String workspaceId) {
+  Future<List<SyncTask>> listDeadTasks(String workspaceId) async {
+    await _queue.pruneDuplicateDead(workspaceId);
     return _queue.listDead(workspaceId);
   }
 
   @override
   Future<void> retryDeadTask(String taskId) {
     return _queue.retryDead(taskId);
+  }
+
+  @override
+  Future<void> retryAllDeadTasks(String workspaceId) async {
+    await _queue.retryAllDead(workspaceId);
+    await _emit(workspaceId, _snapshot(workspaceId));
+  }
+
+  @override
+  Future<void> clearDeadTasks(String workspaceId) async {
+    await _queue.clearDead(workspaceId);
+    await _emit(workspaceId, _snapshot(workspaceId));
+  }
+
+  @override
+  Future<int> pruneDeadTasks(String workspaceId) async {
+    final n = await _queue.pruneDuplicateDead(workspaceId);
+    await _emit(workspaceId, _snapshot(workspaceId));
+    return n;
   }
 
   /// Exposed for tests: whether a full pull should run.
@@ -196,6 +216,8 @@ class SyncWorker implements SyncService {
     );
 
     try {
+      // Hygiene: collapse duplicate dead letters before counting / drain.
+      await _queue.pruneDuplicateDead(workspace.localId);
       // Recover stuck running tasks always; force drain clears backoff too.
       await _queue.recoverStuckRunning(workspace.localId);
       if (forceDrain) {
@@ -380,26 +402,31 @@ class SyncWorker implements SyncService {
           await _queue.complete(task.id);
           break;
       }
-    } on AuthFailure {
+    } on AuthFailure catch (e) {
       await _queue.fail(
         id: task.id,
         retryCount: task.retryCount,
         nextAttemptAt: DateTime.now().add(const Duration(minutes: 5)),
-        error: 'Unauthorized',
+        error: e.message,
         dead: false,
+        workspaceId: workspace.localId,
+        entityLocalId: task.entityLocalId,
       );
       rethrow;
     } catch (e) {
       final retry = task.retryCount + 1;
       final dead = retry >= AppConstants.maxSyncRetries;
+      final msg = e is AppFailure ? e.message : e.toString();
       await _queue.fail(
         id: task.id,
         retryCount: retry,
         nextAttemptAt: DateTime.now().add(SyncQueue.backoff(retry)),
-        error: e.toString(),
+        error: msg,
         dead: dead,
+        workspaceId: workspace.localId,
+        entityLocalId: task.entityLocalId,
       );
-      await _memos.markError(task.entityLocalId, e.toString());
+      await _memos.markError(task.entityLocalId, msg);
     }
   }
 

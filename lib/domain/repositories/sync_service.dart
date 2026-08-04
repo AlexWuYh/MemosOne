@@ -15,4 +15,13 @@ abstract class SyncService {
   Future<List<SyncTask>> listDeadTasks(String workspaceId);
 
   Future<void> retryDeadTask(String taskId);
+
+  /// Retry every dead task (after collapsing duplicates).
+  Future<void> retryAllDeadTasks(String workspaceId);
+
+  /// Drop dead-letter entries without re-running them.
+  Future<void> clearDeadTasks(String workspaceId);
+
+  /// Collapse duplicate dead tasks for the same memo (UI hygiene).
+  Future<int> pruneDeadTasks(String workspaceId);
 }

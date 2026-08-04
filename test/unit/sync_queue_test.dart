@@ -106,4 +106,60 @@ void main() {
     expect(next, isNotNull);
     expect(next!.entityLocalId, 'm1');
   });
+
+  test('pruneDuplicateDead keeps one dead per entity', () async {
+    for (var i = 0; i < 5; i++) {
+      await queue.enqueueMemo(
+        workspaceId: 'w',
+        entityLocalId: 'm1',
+        action: SyncAction.create,
+      );
+      final id = (await db.select(db.syncTasks).get()).last.id;
+      await queue.fail(
+        id: id,
+        retryCount: 12,
+        nextAttemptAt: DateTime.now(),
+        error: 'auth',
+        dead: true,
+        workspaceId: 'w',
+        entityLocalId: 'm1',
+      );
+    }
+    // fail() already prunes others for same entity when marking dead
+    var dead = await queue.countDead('w');
+    expect(dead, 1);
+
+    // Insert extras without prune path then collapse
+    await db.into(db.syncTasks).insert(
+          SyncTasksCompanion.insert(
+            id: 'extra-dead-1',
+            workspaceId: 'w',
+            entityType: SyncEntityType.memo.name,
+            entityLocalId: 'm1',
+            action: SyncAction.create.name,
+            status: SyncTaskStatus.dead.name,
+            nextAttemptAt: DateTime.now(),
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+          ),
+        );
+    await db.into(db.syncTasks).insert(
+          SyncTasksCompanion.insert(
+            id: 'extra-dead-2',
+            workspaceId: 'w',
+            entityType: SyncEntityType.memo.name,
+            entityLocalId: 'm1',
+            action: SyncAction.create.name,
+            status: SyncTaskStatus.dead.name,
+            nextAttemptAt: DateTime.now(),
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+          ),
+        );
+    dead = await queue.countDead('w');
+    expect(dead, greaterThan(1));
+    final removed = await queue.pruneDuplicateDead('w');
+    expect(removed, greaterThan(0));
+    expect(await queue.countDead('w'), 1);
+  });
 }

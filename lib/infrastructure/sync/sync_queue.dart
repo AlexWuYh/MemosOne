@@ -202,21 +202,79 @@ class SyncQueue {
   Future<bool> hasOpenTask({
     required String workspaceId,
     required String entityLocalId,
+    bool includeDead = false,
   }) async {
+    final statuses = [
+      SyncTaskStatus.pending.name,
+      SyncTaskStatus.failed.name,
+      SyncTaskStatus.running.name,
+      if (includeDead) SyncTaskStatus.dead.name,
+    ];
     final rows = await (_db.select(_db.syncTasks)
           ..where(
             (t) =>
                 t.workspaceId.equals(workspaceId) &
                 t.entityLocalId.equals(entityLocalId) &
-                t.status.isIn([
-                  SyncTaskStatus.pending.name,
-                  SyncTaskStatus.failed.name,
-                  SyncTaskStatus.running.name,
-                ]),
+                t.status.isIn(statuses),
           )
           ..limit(1))
         .get();
     return rows.isNotEmpty;
+  }
+
+  /// Keep at most one dead task per entity (prevents settings-page floods).
+  Future<int> pruneDuplicateDead(String workspaceId) async {
+    final rows = await (_db.select(_db.syncTasks)
+          ..where(
+            (t) =>
+                t.workspaceId.equals(workspaceId) &
+                t.status.equals(SyncTaskStatus.dead.name),
+          )
+          ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)]))
+        .get();
+    final seen = <String>{};
+    var removed = 0;
+    for (final row in rows) {
+      if (seen.contains(row.entityLocalId)) {
+        await (_db.delete(_db.syncTasks)..where((t) => t.id.equals(row.id)))
+            .go();
+        removed++;
+      } else {
+        seen.add(row.entityLocalId);
+      }
+    }
+    return removed;
+  }
+
+  Future<int> clearDead(String workspaceId) async {
+    return (_db.delete(_db.syncTasks)
+          ..where(
+            (t) =>
+                t.workspaceId.equals(workspaceId) &
+                t.status.equals(SyncTaskStatus.dead.name),
+          ))
+        .go();
+  }
+
+  Future<int> retryAllDead(String workspaceId) async {
+    final now = DateTime.now();
+    // First collapse duplicates so we don't retry 200 identical creates.
+    await pruneDuplicateDead(workspaceId);
+    return (_db.update(_db.syncTasks)
+          ..where(
+            (t) =>
+                t.workspaceId.equals(workspaceId) &
+                t.status.equals(SyncTaskStatus.dead.name),
+          ))
+        .write(
+      SyncTasksCompanion(
+        status: Value(SyncTaskStatus.pending.name),
+        retryCount: const Value(0),
+        nextAttemptAt: Value(now),
+        lastError: const Value(null),
+        updatedAt: Value(now),
+      ),
+    );
   }
 
   Future<void> markRunning(String id) async {
@@ -238,6 +296,8 @@ class SyncQueue {
     required DateTime nextAttemptAt,
     required String error,
     required bool dead,
+    String? workspaceId,
+    String? entityLocalId,
   }) async {
     await (_db.update(_db.syncTasks)..where((t) => t.id.equals(id))).write(
       SyncTasksCompanion(
@@ -250,6 +310,21 @@ class SyncQueue {
         updatedAt: Value(DateTime.now()),
       ),
     );
+    // When a task dies, drop older dead clones for the same memo.
+    if (dead && workspaceId != null && entityLocalId != null) {
+      final others = await (_db.select(_db.syncTasks)
+            ..where(
+              (t) =>
+                  t.workspaceId.equals(workspaceId) &
+                  t.entityLocalId.equals(entityLocalId) &
+                  t.status.equals(SyncTaskStatus.dead.name) &
+                  t.id.isNotValue(id),
+            ))
+          .get();
+      for (final o in others) {
+        await (_db.delete(_db.syncTasks)..where((t) => t.id.equals(o.id))).go();
+      }
+    }
   }
 
   Future<int> countPending(String workspaceId) async {

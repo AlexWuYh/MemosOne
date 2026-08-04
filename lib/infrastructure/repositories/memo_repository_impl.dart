@@ -683,6 +683,8 @@ class MemoRepositoryImpl implements MemoRepository, SyncMemoGateway {
 
   @override
   Future<int> requeueOrphanDirty(String workspaceId) async {
+    // Never spawn new tasks when a dead/pending/failed one already exists —
+    // that used to flood the dead-letter list (hundreds per entity).
     final rows = await (_db.select(_db.memos)
           ..where(
             (t) =>
@@ -696,6 +698,7 @@ class MemoRepositoryImpl implements MemoRepository, SyncMemoGateway {
       final open = await _queue.hasOpenTask(
         workspaceId: workspaceId,
         entityLocalId: row.localId,
+        includeDead: true,
       );
       if (open) continue;
       await _queue.enqueueMemo(
@@ -720,6 +723,7 @@ class MemoRepositoryImpl implements MemoRepository, SyncMemoGateway {
       final open = await _queue.hasOpenTask(
         workspaceId: workspaceId,
         entityLocalId: row.localId,
+        includeDead: true,
       );
       if (open) continue;
       if (row.serverName == null || row.serverName!.isEmpty) {

@@ -437,24 +437,63 @@ class MemosApiClient {
     required String content,
     required MemoVisibility visibility,
   }) async {
-    try {
-      final res = await _dio.post<Map<String, dynamic>>(
-        '/api/v1/memos',
-        data: {
-          'content': content,
-          'visibility': visibility.name.toUpperCase(),
-        },
-      );
-      if (res.statusCode != null && res.statusCode! >= 400) {
-        throw NetworkFailure(
-          _extractErrorMessage(res.data) ?? 'Failed to create memo',
-          statusCode: res.statusCode,
+    // HTTP body maps to CreateMemoRequest.memo (google.api.http body: "memo").
+    final memoBody = {
+      'content': content,
+      'visibility': visibility.name.toUpperCase(),
+    };
+    final attempts = <Object>[
+      memoBody,
+      // Some proxies / older builds expect the full request wrapper.
+      {'memo': memoBody},
+    ];
+    Object? lastBody;
+    int? lastStatus;
+    DioException? lastDio;
+    for (final data in attempts) {
+      try {
+        final res = await _dio.post<Map<String, dynamic>>(
+          '/api/v1/memos',
+          data: data,
         );
+        lastStatus = res.statusCode;
+        lastBody = res.data;
+        if (res.statusCode != null &&
+            res.statusCode! >= 200 &&
+            res.statusCode! < 300) {
+          final map = res.data ?? const <String, dynamic>{};
+          // Connect may wrap response as { "memo": { ... } }.
+          final payload = map['memo'] is Map
+              ? Map<String, dynamic>.from(map['memo'] as Map)
+              : map;
+          final dto = RemoteMemoDto.fromJson(payload);
+          if (dto.name.isNotEmpty) return dto;
+        }
+        if (res.statusCode == 401 || res.statusCode == 403) {
+          throw AuthFailure(
+            _extractErrorMessage(res.data) ?? 'user not authenticated',
+          );
+        }
+      } on AuthFailure {
+        rethrow;
+      } on DioException catch (e) {
+        lastDio = e;
+        lastStatus = e.response?.statusCode;
+        lastBody = e.response?.data;
+        if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
+          throw AuthFailure(
+            _extractErrorMessage(e.response?.data) ?? 'user not authenticated',
+            cause: e,
+          );
+        }
       }
-      return RemoteMemoDto.fromJson(res.data ?? {});
-    } on DioException catch (e) {
-      throw _mapDio(e, 'Failed to create memo');
     }
+    throw NetworkFailure(
+      _extractErrorMessage(lastBody) ??
+          '创建笔记失败 (HTTP ${lastStatus ?? '无响应'})',
+      statusCode: lastStatus,
+      cause: lastDio,
+    );
   }
 
   Future<RemoteMemoDto> updateMemo({
@@ -464,52 +503,65 @@ class MemosApiClient {
     required bool pinned,
     required bool archived,
   }) async {
-    try {
-      final res = await _dio.patch<Map<String, dynamic>>(
-        '/api/v1/$name',
-        data: {
-          'memo': {
-            'name': name,
-            'content': content,
-            'visibility': visibility.name.toUpperCase(),
-            'pinned': pinned,
-            'state': archived ? 'ARCHIVED' : 'NORMAL',
-          },
-          'updateMask': 'content,visibility,pinned,state',
-        },
-      );
-      if (res.statusCode != null &&
-          res.statusCode! >= 200 &&
-          res.statusCode! < 300) {
-        return RemoteMemoDto.fromJson(res.data ?? {});
-      }
-    } on DioException {
-      // try alternate
-    }
-    try {
-      final res = await _dio.patch<Map<String, dynamic>>(
-        '/api/v1/$name',
-        queryParameters: {
-          'updateMask': 'content,visibility,pinned,state',
-        },
-        data: {
-          'name': name,
-          'content': content,
-          'visibility': visibility.name.toUpperCase(),
-          'pinned': pinned,
-          'state': archived ? 'ARCHIVED' : 'NORMAL',
-        },
-      );
-      if (res.statusCode != null && res.statusCode! >= 400) {
-        throw NetworkFailure(
-          _extractErrorMessage(res.data) ?? 'Failed to update memo',
-          statusCode: res.statusCode,
+    // body: "memo" → HTTP body is the Memo; updateMask is a query param.
+    final memoBody = {
+      'name': name,
+      'content': content,
+      'visibility': visibility.name.toUpperCase(),
+      'pinned': pinned,
+      'state': archived ? 'ARCHIVED' : 'NORMAL',
+    };
+    final masks = <String>[
+      'content,visibility,pinned,state',
+      'content,visibility,pinned',
+      'content,visibility',
+    ];
+    Object? lastBody;
+    int? lastStatus;
+    DioException? lastDio;
+    for (final mask in masks) {
+      try {
+        final res = await _dio.patch<Map<String, dynamic>>(
+          '/api/v1/$name',
+          queryParameters: {'updateMask': mask},
+          data: memoBody,
         );
+        lastStatus = res.statusCode;
+        lastBody = res.data;
+        if (res.statusCode != null &&
+            res.statusCode! >= 200 &&
+            res.statusCode! < 300) {
+          final map = res.data ?? const <String, dynamic>{};
+          final payload = map['memo'] is Map
+              ? Map<String, dynamic>.from(map['memo'] as Map)
+              : map;
+          return RemoteMemoDto.fromJson(payload);
+        }
+        if (res.statusCode == 401 || res.statusCode == 403) {
+          throw AuthFailure(
+            _extractErrorMessage(res.data) ?? 'user not authenticated',
+          );
+        }
+      } on AuthFailure {
+        rethrow;
+      } on DioException catch (e) {
+        lastDio = e;
+        lastStatus = e.response?.statusCode;
+        lastBody = e.response?.data;
+        if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
+          throw AuthFailure(
+            _extractErrorMessage(e.response?.data) ?? 'user not authenticated',
+            cause: e,
+          );
+        }
       }
-      return RemoteMemoDto.fromJson(res.data ?? {});
-    } on DioException catch (e2) {
-      throw _mapDio(e2, 'Failed to update memo');
     }
+    throw NetworkFailure(
+      _extractErrorMessage(lastBody) ??
+          '更新笔记失败 (HTTP ${lastStatus ?? '无响应'})',
+      statusCode: lastStatus,
+      cause: lastDio,
+    );
   }
 
   Future<void> deleteMemo(String name) async {
