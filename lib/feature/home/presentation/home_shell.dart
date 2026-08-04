@@ -217,7 +217,7 @@ class _PrimaryRail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 68,
+      width: 76,
       decoration: const BoxDecoration(
         color: AppTheme.paperElevated,
         border: Border(right: BorderSide(color: AppTheme.line)),
@@ -225,12 +225,12 @@ class _PrimaryRail extends StatelessWidget {
       child: SafeArea(
         child: Column(
           children: [
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             const Tooltip(
               message: 'Memos One',
-              child: AppLogo(size: 48),
+              child: AppLogo(size: 58),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             _RailItem(
               icon: Icons.folder_outlined,
               selectedIcon: Icons.folder_rounded,

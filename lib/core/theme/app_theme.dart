@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 
-/// Visual identity: calm field-notebook for Memos.
-/// Warm paper, ink, deep sea-green accent — not default purple Material.
+/// Visual identity: clean white shell + ink + sea-green accent.
 abstract final class AppTheme {
-  // Named palette
-  static const paper = Color(0xFFF3F0EA);
-  static const paperElevated = Color(0xFFFCFAF6);
+  // Named palette — pure white canvas (user preference)
+  static const paper = Color(0xFFFFFFFF);
+  static const paperElevated = Color(0xFFFFFFFF);
   static const ink = Color(0xFF1C1B19);
   static const inkMuted = Color(0xFF6E6860);
-  static const line = Color(0xFFE3DDD3);
+  static const line = Color(0xFFE8E8E6);
   static const accent = Color(0xFF2F6F5E);
   static const accentSoft = Color(0xFFD7E8E1);
   static const danger = Color(0xFFB42318);
@@ -34,8 +33,8 @@ abstract final class AppTheme {
       error: danger,
     ).copyWith(
       surfaceContainerLowest: paperElevated,
-      surfaceContainerLow: paperElevated,
-      surfaceContainerHighest: const Color(0xFFECE7DE),
+      surfaceContainerLow: const Color(0xFFFAFAFA),
+      surfaceContainerHighest: const Color(0xFFF0F0EE),
       primaryContainer: accentSoft,
       onPrimaryContainer: const Color(0xFF0F3D32),
     );

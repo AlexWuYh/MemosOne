@@ -216,7 +216,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                 children: [
                   const Align(
                     alignment: Alignment.centerLeft,
-                    child: AppLogo(size: 80, borderRadius: 20),
+                    child: AppLogo(size: 96, borderRadius: 22),
                   ),
                   const SizedBox(height: 28),
                   const Text(

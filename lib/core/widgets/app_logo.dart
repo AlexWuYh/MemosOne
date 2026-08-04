@@ -2,40 +2,44 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// In-app brand mark — hand-drawn Memos bird on paper.
-///
-/// Designed to read clearly at 40–72px (not a dense app-store badge).
+/// In-app brand mark — hand-drawn Memos bird on pure white.
 class AppLogo extends StatelessWidget {
   const AppLogo({
     super.key,
-    this.size = 48,
+    this.size = 56,
     this.borderRadius,
     this.padded = true,
+    this.showBorder = false,
   });
 
   /// Outer box size.
   final double size;
 
-  /// Corner radius of the paper plate (null = soft notebook radius).
+  /// Corner radius (null = soft radius from size).
   final double? borderRadius;
 
-  /// Add inner padding so the bird stays large and clear.
+  /// Inner padding so the bird stays readable.
   final bool padded;
+
+  /// Optional hairline border (off by default on white canvas).
+  final bool showBorder;
 
   static const assetPath = 'assets/icons/app_logo_sketch.png';
 
   @override
   Widget build(BuildContext context) {
-    final radius = borderRadius ?? (size * 0.22).clamp(10.0, 18.0);
-    final pad = padded ? size * 0.08 : 0.0;
+    final radius = borderRadius ?? (size * 0.2).clamp(10.0, 20.0);
+    final pad = padded ? size * 0.04 : 0.0;
 
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: AppTheme.paperElevated,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: AppTheme.line.withValues(alpha: 0.85)),
+        border: showBorder
+            ? Border.all(color: AppTheme.line.withValues(alpha: 0.9))
+            : null,
       ),
       clipBehavior: Clip.antiAlias,
       padding: EdgeInsets.all(pad),
