@@ -228,7 +228,7 @@ class _PrimaryRail extends StatelessWidget {
             const SizedBox(height: 12),
             const Tooltip(
               message: 'Memos One',
-              child: AppLogo(size: 36),
+              child: AppLogo(size: 48),
             ),
             const SizedBox(height: 18),
             _RailItem(

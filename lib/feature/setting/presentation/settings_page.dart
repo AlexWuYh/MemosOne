@@ -988,7 +988,7 @@ class _AboutPane extends StatelessWidget {
             title: '应用',
             children: [
               const ListTile(
-                leading: AppLogo(size: 44, borderRadius: 12),
+                leading: AppLogo(size: 56, borderRadius: 14),
                 title: Text(AppConstants.appName),
                 subtitle: Text(AppConstants.appTagline),
               ),
