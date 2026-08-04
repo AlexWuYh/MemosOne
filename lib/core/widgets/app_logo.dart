@@ -42,13 +42,13 @@ class AppLogo extends StatelessWidget {
         filterQuality: FilterQuality.medium,
         errorBuilder: (_, __, ___) => Container(
           decoration: BoxDecoration(
-            color: AppTheme.accentSoft,
+            color: Theme.of(context).colorScheme.primaryContainer,
             borderRadius: BorderRadius.circular(radius),
           ),
           alignment: Alignment.center,
           child: Icon(
             Icons.sticky_note_2_outlined,
-            color: AppTheme.accent,
+            color: Theme.of(context).colorScheme.primary,
             size: size * 0.45,
           ),
         ),

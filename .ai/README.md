@@ -6,7 +6,7 @@
 
 ## Project in one sentence
 
-**Memos One** is an **Offline First** native cross-platform client for [usememos/memos](https://github.com/usememos/memos). Local SQLite is the source of truth; Memos Server is a sync peer.
+**Memos One** is an **Offline First** native cross-platform client for [usememos/memos](https://github.com/usememos/memos). Local SQLite is the source of truth; Memos Server is a sync peer. **V1 UI:** single cloud connection, calm AppFlowy-like chrome, timeline feed, Memos bird brand.
 
 ## Read order (onboarding)
 

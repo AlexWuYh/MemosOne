@@ -682,6 +682,37 @@ class MemoRepositoryImpl implements MemoRepository, SyncMemoGateway {
   }
 
   @override
+  @override
+  Future<int> prepareLocalMemosForCloudPush(String workspaceId) async {
+    final rows = await (_db.select(_db.memos)
+          ..where(
+            (t) =>
+                t.workspaceId.equals(workspaceId) & t.deletedAt.isNull(),
+          ))
+        .get();
+    var n = 0;
+    for (final row in rows) {
+      await (_db.update(_db.memos)..where((t) => t.localId.equals(row.localId)))
+          .write(
+        MemosCompanion(
+          dirty: const Value(true),
+          syncStatus: Value(MemoSyncStatus.dirty.name),
+        ),
+      );
+      final action = row.serverName == null || row.serverName!.isEmpty
+          ? SyncAction.create
+          : SyncAction.update;
+      await _queue.enqueueMemo(
+        workspaceId: workspaceId,
+        entityLocalId: row.localId,
+        action: action,
+      );
+      n++;
+    }
+    return n;
+  }
+
+  @override
   Future<int> requeueOrphanDirty(String workspaceId) async {
     // Never spawn new tasks when a dead/pending/failed one already exists —
     // that used to flood the dead-letter list (hundreds per entity).

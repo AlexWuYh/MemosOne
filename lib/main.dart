@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -14,6 +15,10 @@ import 'infrastructure/storage/preferences_store.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Offline First: never block first paint on font CDN.
+  // Inter falls back to platform UI fonts when not cached.
+  GoogleFonts.config.allowRuntimeFetching = false;
 
   final prefs = await SharedPreferences.getInstance();
   final prefStore = PreferencesStore(prefs);

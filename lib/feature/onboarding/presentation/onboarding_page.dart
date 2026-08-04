@@ -387,13 +387,13 @@ class _ChoiceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: emphasized ? AppTheme.accentSoft : AppTheme.paperElevated,
+      color: emphasized ? Theme.of(context).colorScheme.primaryContainer : AppTheme.paperElevated,
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppTheme.radiusLg),
         side: BorderSide(
           color: emphasized
-              ? AppTheme.accent.withValues(alpha: 0.25)
+              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.25)
               : AppTheme.line,
         ),
       ),
@@ -408,7 +408,7 @@ class _ChoiceCard extends StatelessWidget {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: emphasized ? AppTheme.accent : AppTheme.surfaceMuted,
+                  color: emphasized ? Theme.of(context).colorScheme.primary : AppTheme.surfaceMuted,
                   borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                 ),
                 child: Icon(

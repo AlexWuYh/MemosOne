@@ -111,7 +111,16 @@ abstract final class AppTheme {
     );
   }
 
+  /// Soft fill derived from the user's accent seed.
+  static Color softOf(Color seed, {double t = 0.14}) =>
+      Color.lerp(Colors.white, seed, t)!.withValues(alpha: 1);
+
+  static Color onSoftOf(Color seed) =>
+      Color.lerp(const Color(0xFF0A1620), seed, 0.65)!;
+
   static ThemeData light([Color seed = accent]) {
+    final soft = softOf(seed);
+    final onSoft = onSoftOf(seed);
     final base = ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
@@ -119,6 +128,7 @@ abstract final class AppTheme {
         seedColor: seed,
         brightness: Brightness.light,
         primary: seed,
+        onPrimary: onAccent,
         secondary: secondary,
         surface: paper,
         onSurface: ink,
@@ -130,8 +140,8 @@ abstract final class AppTheme {
         surfaceContainerLowest: paperElevated,
         surfaceContainerLow: surfaceMuted,
         surfaceContainerHighest: surfaceHover,
-        primaryContainer: accentSoft,
-        onPrimaryContainer: const Color(0xFF00668F),
+        primaryContainer: soft,
+        onPrimaryContainer: onSoft,
         secondaryContainer: secondarySoft,
       ),
     );
@@ -184,12 +194,12 @@ abstract final class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radiusMd),
-          borderSide: const BorderSide(color: accent, width: 1.5),
+          borderSide: BorderSide(color: seed, width: 1.5),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          backgroundColor: accent,
+          backgroundColor: seed,
           foregroundColor: onAccent,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -220,13 +230,13 @@ abstract final class AppTheme {
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: accent,
+          foregroundColor: seed,
           textStyle: GoogleFonts.inter(fontWeight: FontWeight.w500),
         ),
       ),
       chipTheme: ChipThemeData(
         backgroundColor: paperElevated,
-        selectedColor: accentSoft,
+        selectedColor: soft,
         disabledColor: surfaceMuted,
         deleteIconColor: inkMuted,
         side: const BorderSide(color: lineStrong),
@@ -249,11 +259,11 @@ abstract final class AppTheme {
         style: ButtonStyle(
           visualDensity: VisualDensity.compact,
           foregroundColor: WidgetStateProperty.resolveWith((s) {
-            if (s.contains(WidgetState.selected)) return accent;
+            if (s.contains(WidgetState.selected)) return seed;
             return inkMuted;
           }),
           backgroundColor: WidgetStateProperty.resolveWith((s) {
-            if (s.contains(WidgetState.selected)) return accentSoft;
+            if (s.contains(WidgetState.selected)) return soft;
             return paperElevated;
           }),
           side: WidgetStateProperty.all(
@@ -265,12 +275,25 @@ abstract final class AppTheme {
         ),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
-        backgroundColor: accent,
+        backgroundColor: seed,
         foregroundColor: onAccent,
         elevation: 2,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radiusLg),
         ),
+      ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: seed),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((s) {
+          if (s.contains(WidgetState.selected)) return seed;
+          return null;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((s) {
+          if (s.contains(WidgetState.selected)) {
+            return seed.withValues(alpha: 0.35);
+          }
+          return null;
+        }),
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
@@ -302,6 +325,7 @@ abstract final class AppTheme {
   }
 
   static ThemeData dark([Color seed = accentDark]) {
+    final soft = Color.lerp(paperElevatedDark, seed, 0.35)!;
     final base = ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
@@ -309,13 +333,15 @@ abstract final class AppTheme {
         seedColor: seed,
         brightness: Brightness.dark,
         primary: seed,
+        onPrimary: paperDark,
         surface: paperDark,
         onSurface: inkDark,
         onSurfaceVariant: inkMutedDark,
         outlineVariant: lineDark,
       ).copyWith(
         surfaceContainerLowest: paperElevatedDark,
-        primaryContainer: const Color(0xFF0A3A52),
+        primaryContainer: soft,
+        onPrimaryContainer: inkDark,
       ),
     );
     return base.copyWith(
@@ -339,6 +365,9 @@ abstract final class AppTheme {
           ),
         ),
       ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(foregroundColor: seed),
+      ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: seed,
         foregroundColor: paperDark,
@@ -346,8 +375,17 @@ abstract final class AppTheme {
           borderRadius: BorderRadius.circular(radiusLg),
         ),
       ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: seed),
     );
   }
+}
+
+/// Dynamic brand colors from [ThemeData.colorScheme] (user accent seed).
+extension BrandColorsX on BuildContext {
+  Color get brand => Theme.of(this).colorScheme.primary;
+  Color get brandSoft => Theme.of(this).colorScheme.primaryContainer;
+  Color get onBrand => Theme.of(this).colorScheme.onPrimary;
+  Color get onBrandSoft => Theme.of(this).colorScheme.onPrimaryContainer;
 }
 
 class ReadingWidth extends StatelessWidget {

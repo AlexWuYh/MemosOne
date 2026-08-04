@@ -174,7 +174,7 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
                         onPressed: tags.isEmpty
                             ? null
                             : () => _openTagPicker(context),
-                        icon: const Icon(Icons.sell_outlined, size: 18),
+                        icon: Icon(Icons.sell_outlined, size: 18),
                         label: Text(
                           tags.isEmpty ? '暂无标签' : '按标签筛选（${tags.length}）',
                           overflow: TextOverflow.ellipsis,
@@ -190,20 +190,20 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
                         ),
                       )
                     : InputChip(
-                        backgroundColor: AppTheme.accentSoft,
+                        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
                         side: BorderSide(
-                          color: AppTheme.accent.withValues(alpha: 0.35),
+                          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
                         ),
-                        deleteIconColor: AppTheme.accent,
-                        avatar: const Icon(
+                        deleteIconColor: Theme.of(context).colorScheme.primary,
+                        avatar: Icon(
                           Icons.sell_rounded,
                           size: 16,
-                          color: AppTheme.accent,
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                         label: Text(
                           '#${filter.tag}',
-                          style: const TextStyle(
-                            color: AppTheme.accent,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
                             fontWeight: FontWeight.w700,
                             fontSize: 13,
                           ),
@@ -220,7 +220,7 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
                 IconButton(
                   tooltip: '更换标签',
                   onPressed: () => _openTagPicker(context),
-                  icon: const Icon(Icons.tune_rounded),
+                  icon: Icon(Icons.tune_rounded),
                 ),
               ],
             ],
@@ -232,15 +232,15 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: InputChip(
-                backgroundColor: AppTheme.accentSoft,
+                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
                 side: BorderSide(
-                  color: AppTheme.accent.withValues(alpha: 0.35),
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
                 ),
-                deleteIconColor: AppTheme.accent,
+                deleteIconColor: Theme.of(context).colorScheme.primary,
                 label: Text(
                   '日期 ${filter.day!.year}-${filter.day!.month.toString().padLeft(2, '0')}-${filter.day!.day.toString().padLeft(2, '0')}',
-                  style: const TextStyle(
-                    color: AppTheme.accent,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
                     fontWeight: FontWeight.w600,
                     fontSize: 12,
                   ),
@@ -274,7 +274,7 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
                   final selected = memo.localId == selectedId;
                   return Material(
                     color: selected
-                        ? AppTheme.accentSoft
+                        ? Theme.of(context).colorScheme.primaryContainer
                         : AppTheme.paperElevated,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
@@ -299,7 +299,7 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
                               duration: AppTheme.motionFast,
                               width: 3,
                               color: selected
-                                  ? AppTheme.accent
+                                  ? Theme.of(context).colorScheme.primary
                                   : Colors.transparent,
                             ),
                             Expanded(
@@ -312,12 +312,12 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
                                     Row(
                                       children: [
                                         if (memo.pinned)
-                                          const Padding(
-                                            padding: EdgeInsets.only(right: 6),
+                                          Padding(
+                                            padding: const EdgeInsets.only(right: 6),
                                             child: Icon(
                                               Icons.push_pin_outlined,
                                               size: 13,
-                                              color: AppTheme.accent,
+                                              color: Theme.of(context).colorScheme.primary,
                                             ),
                                           ),
                                         Expanded(
@@ -413,15 +413,15 @@ class _FilterPill extends StatelessWidget {
       label: Text(label),
       selected: selected,
       onSelected: (_) => onTap(),
-      selectedColor: AppTheme.accentSoft,
+      selectedColor: Theme.of(context).colorScheme.primaryContainer,
       backgroundColor: AppTheme.surfaceMuted,
       side: BorderSide(
-        color: selected ? AppTheme.accent.withValues(alpha: 0.35) : AppTheme.line,
+        color: selected ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.35) : AppTheme.line,
       ),
       labelStyle: TextStyle(
         fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
         fontSize: 12,
-        color: selected ? AppTheme.accent : AppTheme.inkMuted,
+        color: selected ? Theme.of(context).colorScheme.primary : AppTheme.inkMuted,
       ),
     );
   }
@@ -526,7 +526,7 @@ class _TagFilterSheetState extends ConsumerState<_TagFilterSheet> {
                                     ? Icons.sell_rounded
                                     : Icons.sell_outlined,
                                 color: selected
-                                    ? AppTheme.accent
+                                    ? Theme.of(context).colorScheme.primary
                                     : AppTheme.inkMuted,
                               ),
                               title: Text(
@@ -536,14 +536,14 @@ class _TagFilterSheetState extends ConsumerState<_TagFilterSheet> {
                                       ? FontWeight.w700
                                       : FontWeight.w500,
                                   color: selected
-                                      ? AppTheme.accent
+                                      ? Theme.of(context).colorScheme.primary
                                       : AppTheme.ink,
                                 ),
                               ),
                               trailing: selected
-                                  ? const Icon(
+                                  ? Icon(
                                       Icons.check_rounded,
-                                      color: AppTheme.accent,
+                                      color: Theme.of(context).colorScheme.primary,
                                     )
                                   : null,
                               onTap: () => Navigator.pop(context, t),

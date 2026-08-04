@@ -37,4 +37,7 @@ abstract class MemoRepository {
   });
 
   Future<void> removeAttachment(String attachmentLocalId);
+
+  /// After promoting local → Memos: mark notes dirty and enqueue create/update.
+  Future<int> prepareLocalMemosForCloudPush(String workspaceId);
 }

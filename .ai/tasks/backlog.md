@@ -1,6 +1,6 @@
 # Development Task Backlog
 
-> Updated: 2026-08-03 after full review + fix pass  
+> Updated: 2026-08-04 — AppFlowy shell, single-cloud, feed timeline, review fixes  
 > Fix items: [fix-backlog-from-review.md](./fix-backlog-from-review.md)
 
 ## Product readiness (honest)
@@ -20,9 +20,10 @@
 
 ## Active focus
 
-1. Live sync D2D after force-drain / orphan requeue fix  
+1. Live sync D2D against a real Memos instance  
 2. Attachment remote upload (FIX-18) — web parity gap  
-3. Android share intent (FIX-19 family)
+3. Android share intent (FIX-19 family)  
+4. Optional: bundle Inter font files if cold-start offline typography must be pixel-perfect
 
 ## Web parity (Memos web → app)
 

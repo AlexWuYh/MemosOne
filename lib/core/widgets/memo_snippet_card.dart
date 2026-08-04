@@ -61,10 +61,10 @@ class MemoSnippetCard extends StatelessWidget {
               Row(
                 children: [
                   if (pinned) ...[
-                    const Icon(
+                    Icon(
                       Icons.push_pin_outlined,
                       size: 14,
-                      color: AppTheme.accent,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                     const SizedBox(width: 6),
                   ],

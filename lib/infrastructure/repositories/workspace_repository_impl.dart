@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/errors/app_failure.dart';
 import '../../domain/entities/workspace.dart';
 import '../../domain/repositories/workspace_repository.dart';
 import '../database/app_database.dart';
@@ -85,6 +86,41 @@ class WorkspaceRepositoryImpl implements WorkspaceRepository {
         );
     final created = await get(id);
     return created!;
+  }
+
+  @override
+  Future<Workspace> bindMemosServer({
+    required String localId,
+    required String serverBaseUrl,
+    bool allowInsecureTls = false,
+    String? name,
+  }) async {
+    final url = serverBaseUrl.trim();
+    if (url.isEmpty || !url.startsWith('http')) {
+      throw const ValidationFailure('请输入有效的服务器地址（https://…）');
+    }
+    final host = Uri.tryParse(url)?.host;
+    await (_db.update(_db.workspaces)..where((t) => t.localId.equals(localId)))
+        .write(
+      WorkspacesCompanion(
+        type: Value(WorkspaceType.memos.name),
+        serverBaseUrl: Value(url),
+        allowInsecureTls: Value(allowInsecureTls),
+        name: name != null && name.trim().isNotEmpty
+            ? Value(name.trim())
+            : (host != null && host.isNotEmpty
+                ? Value(host)
+                : const Value.absent()),
+        authState: Value(WorkspaceAuthState.none.name),
+        initialSyncCompleted: const Value(false),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+    final updated = await get(localId);
+    if (updated == null) {
+      throw StateError('Workspace $localId missing after bind');
+    }
+    return updated;
   }
 
   @override

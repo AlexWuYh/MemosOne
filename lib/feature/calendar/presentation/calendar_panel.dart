@@ -82,15 +82,15 @@ class CalendarPanel extends ConsumerWidget {
             child: Align(
               alignment: Alignment.centerLeft,
               child: InputChip(
-                backgroundColor: AppTheme.accentSoft,
+                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
                 side: BorderSide(
-                  color: AppTheme.accent.withValues(alpha: 0.35),
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
                 ),
-                deleteIconColor: AppTheme.accent,
+                deleteIconColor: Theme.of(context).colorScheme.primary,
                 label: Text(
                   '已过滤：${DateFormat('yyyy-MM-dd').format(filter.day!)}',
-                  style: const TextStyle(
-                    color: AppTheme.accent,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
                     fontWeight: FontWeight.w600,
                     fontSize: 12,
                   ),
@@ -114,7 +114,7 @@ class CalendarPanel extends ConsumerWidget {
                       ? DateTime(m.year - 1, m.month)
                       : DateTime(m.year, m.month - 1);
                 },
-                icon: const Icon(Icons.chevron_left),
+                icon: Icon(Icons.chevron_left),
               ),
               Expanded(
                 child: Text(
@@ -240,7 +240,7 @@ class _MonthHeatmap extends ConsumerWidget {
                     // Heat cells with primary fill need light text; empty use ink.
                     final fg = count > 0
                         ? Colors.white
-                        : (isToday ? AppTheme.accent : scheme.onSurface);
+                        : (isToday ? Theme.of(context).colorScheme.primary : scheme.onSurface);
                     final selected = ref.watch(memoFilterProvider).day;
                     final isSel = selected != null &&
                         selected.year == day.year &&
@@ -268,7 +268,7 @@ class _MonthHeatmap extends ConsumerWidget {
                             borderRadius: BorderRadius.circular(8),
                             border: isToday
                                 ? Border.all(
-                                    color: AppTheme.accent,
+                                    color: Theme.of(context).colorScheme.primary,
                                     width: isSel ? 2.5 : 2,
                                   )
                                 : isSel

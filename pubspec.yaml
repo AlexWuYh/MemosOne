@@ -1,5 +1,5 @@
 name: memos_one
-description: Offline-first native client for Memos. One Client. Every Device. Your Memos.
+description: Offline First Memos client — single cloud, local SQLite SoT, timeline feed. One Client. Every Device. Your Memos.
 publish_to: "none"
 version: 0.1.0+1
 

@@ -218,7 +218,7 @@ class _NavTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Material(
-        color: selected ? AppTheme.accentSoft : Colors.transparent,
+        color: selected ? Theme.of(context).colorScheme.primaryContainer : Colors.transparent,
         borderRadius: BorderRadius.circular(AppTheme.radiusMd),
         child: InkWell(
           borderRadius: BorderRadius.circular(AppTheme.radiusMd),
@@ -230,7 +230,7 @@ class _NavTile extends StatelessWidget {
                 Icon(
                   icon,
                   size: 18,
-                  color: selected ? AppTheme.accent : AppTheme.inkMuted,
+                  color: selected ? Theme.of(context).colorScheme.primary : AppTheme.inkMuted,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -239,7 +239,7 @@ class _NavTile extends StatelessWidget {
                     style: TextStyle(
                       fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                       fontSize: 13,
-                      color: selected ? AppTheme.accent : AppTheme.ink,
+                      color: selected ? Theme.of(context).colorScheme.primary : AppTheme.ink,
                     ),
                   ),
                 ),
@@ -396,7 +396,7 @@ class _AppearancePane extends ConsumerWidget {
                 spacing: 10,
                 runSpacing: 10,
                 children: [
-                  AppTheme.accent, // workspace blue
+                  Theme.of(context).colorScheme.primary, // workspace blue
                   AppTheme.secondary,
                   AppTheme.mint,
                   const Color(0xFF0D9488),
@@ -464,7 +464,7 @@ class _MemoPrefsPane extends ConsumerWidget {
           ListTile(
             title: const Text('新建笔记可见性'),
             subtitle: Text(visibilityLabel(defaultVis)),
-            trailing: const Icon(Icons.chevron_right_rounded),
+            trailing: Icon(Icons.chevron_right_rounded),
             onTap: () async {
               final picked = await showModalBottomSheet<MemoVisibility>(
                 context: context,
@@ -478,7 +478,7 @@ class _MemoPrefsPane extends ConsumerWidget {
                           title: Text(visibilityLabel(v)),
                           subtitle: Text(v.name.toUpperCase()),
                           trailing: v == defaultVis
-                              ? const Icon(Icons.check, color: AppTheme.accent)
+                              ? Icon(Icons.check, color: Theme.of(context).colorScheme.primary)
                               : null,
                           onTap: () => Navigator.pop(ctx, v),
                         ),
@@ -556,7 +556,7 @@ class _SyncPane extends ConsumerWidget {
                           : state == GlobalSyncState.syncing
                               ? Icons.sync
                               : Icons.cloud_done_outlined,
-                      color: dead > 0 ? AppTheme.danger : AppTheme.accent,
+                      color: dead > 0 ? AppTheme.danger : Theme.of(context).colorScheme.primary,
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -806,12 +806,21 @@ class _ConnectionPane extends ConsumerWidget {
       title: '云端',
       subtitle: '只连接一个 Memos 实例。本地是缓存，离线也能写。',
       child: active == null
-          ? const _CardBlock(
+          ? _CardBlock(
               title: '状态',
-              child: ListTile(
-                title: Text('尚未连接'),
-                subtitle: Text('从引导页或登录入口连接服务器'),
-              ),
+              children: [
+                const ListTile(
+                  title: Text('尚未连接'),
+                  subtitle: Text('连接服务器后即可同步；本地笔记可先写再绑定。'),
+                ),
+                ListTile(
+                  leading: Icon(Icons.cloud_outlined, color: Theme.of(context).colorScheme.primary),
+                  title: const Text('连接 Memos'),
+                  subtitle: const Text('输入服务器地址并登录'),
+                  trailing: Icon(Icons.chevron_right),
+                  onTap: () => showConnectMemosDialog(context, ref),
+                ),
+              ],
             )
           : Column(
               children: [
@@ -827,20 +836,46 @@ class _ConnectionPane extends ConsumerWidget {
                       ),
                       isThreeLine: !active!.isLocal,
                     ),
-                    if (active!.isMemos && active!.serverBaseUrl != null)
+                    if (active!.isLocal)
                       ListTile(
-                        leading: const Icon(Icons.open_in_browser_rounded),
-                        title: const Text('在浏览器打开'),
-                        onTap: () async {
-                          final uri = Uri.tryParse(active!.serverBaseUrl!);
-                          if (uri != null) {
-                            await launchUrl(
-                              uri,
-                              mode: LaunchMode.externalApplication,
-                            );
-                          }
-                        },
+                        leading: Icon(
+                          Icons.cloud_upload_outlined,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        title: const Text('升级连接云端'),
+                        subtitle: const Text('保留本地笔记，绑定 Memos 后同步'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => showConnectMemosDialog(
+                          context,
+                          ref,
+                          existing: active,
+                        ),
                       ),
+                    if (active!.isMemos) ...[
+                      if (active!.serverBaseUrl != null)
+                        ListTile(
+                          leading: const Icon(Icons.open_in_browser_rounded),
+                          title: const Text('在浏览器打开'),
+                          onTap: () async {
+                            final uri = Uri.tryParse(active!.serverBaseUrl!);
+                            if (uri != null) {
+                              await launchUrl(
+                                uri,
+                                mode: LaunchMode.externalApplication,
+                              );
+                            }
+                          },
+                        ),
+                      ListTile(
+                        leading: const Icon(Icons.edit_outlined),
+                        title: const Text('更换服务器 / 重新绑定'),
+                        onTap: () => showConnectMemosDialog(
+                          context,
+                          ref,
+                          existing: active,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 _CardBlock(
@@ -904,12 +939,23 @@ class _AccountPane extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (workspace == null || !workspace!.isMemos) {
-      return const _Pane(
+      return _Pane(
         title: '账户',
         subtitle: '连接 Memos 云端后可管理账户。',
         child: _CardBlock(
           title: '提示',
-          child: ListTile(title: Text('尚未连接云端')),
+          children: [
+            const ListTile(title: Text('尚未连接云端')),
+            ListTile(
+              leading: Icon(Icons.cloud_outlined, color: Theme.of(context).colorScheme.primary),
+              title: const Text('去连接'),
+              onTap: () => showConnectMemosDialog(
+                context,
+                ref,
+                existing: workspace,
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -988,7 +1034,7 @@ class _AboutPane extends StatelessWidget {
   Widget build(BuildContext context) {
     return _Pane(
       title: '关于',
-      subtitle: 'Memos One · Offline First 客户端',
+      subtitle: AppConstants.appAbout,
       child: Column(
         children: [
           _CardBlock(
@@ -997,7 +1043,10 @@ class _AboutPane extends StatelessWidget {
               const ListTile(
                 leading: AppLogo(size: 72, borderRadius: 16),
                 title: Text(AppConstants.appName),
-                subtitle: Text(AppConstants.appTagline),
+                subtitle: Text(
+                  '${AppConstants.appTagline}\n${AppConstants.appAbout}',
+                ),
+                isThreeLine: true,
               ),
               ListTile(
                 leading: const Icon(Icons.code_rounded),
@@ -1140,8 +1189,8 @@ class _AccountCardState extends ConsumerState<_AccountCard> {
       title: '资料',
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: AppTheme.accentSoft,
-          foregroundColor: AppTheme.accent,
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          foregroundColor: Theme.of(context).colorScheme.primary,
           child: Text(
             display.isNotEmpty
                 ? String.fromCharCode(display.runes.first)

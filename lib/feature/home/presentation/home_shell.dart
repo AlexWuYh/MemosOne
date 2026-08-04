@@ -83,12 +83,8 @@ class HomeShell extends ConsumerWidget {
           backgroundColor: AppTheme.paper,
           body: active == null
               ? _NoConnection(
-                  onConnect: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const SettingsPage(),
-                      ),
-                    );
+                  onConnect: () async {
+                    await showConnectMemosDialog(context, ref);
                   },
                 )
               : Row(
@@ -327,16 +323,16 @@ class _RailItemState extends State<_RailItem> {
   Widget build(BuildContext context) {
     final selected = widget.selected;
     final bg = widget.accent
-        ? AppTheme.accent
+        ? Theme.of(context).colorScheme.primary
         : selected
-            ? AppTheme.accentSoft
+            ? Theme.of(context).colorScheme.primaryContainer
             : _hover
                 ? AppTheme.surfaceHover
                 : Colors.transparent;
     final fg = widget.accent
         ? AppTheme.onAccent
         : selected
-            ? AppTheme.accent
+            ? Theme.of(context).colorScheme.primary
             : AppTheme.inkMuted;
 
     return Padding(
@@ -486,8 +482,8 @@ class _SoftSync extends StatelessWidget {
       GlobalSyncState.syncing => (
           Icons.sync,
           '同步中',
-          AppTheme.accent,
-          AppTheme.accentSoft,
+          Theme.of(context).colorScheme.primary,
+          Theme.of(context).colorScheme.primaryContainer,
         ),
       GlobalSyncState.offline => (
           Icons.cloud_off_outlined,

@@ -5,37 +5,56 @@ import '../../../app/providers.dart';
 import '../../../core/errors/app_failure.dart';
 import '../../../domain/entities/workspace.dart';
 
-Future<void> showCreateWorkspaceDialog(
+/// Connect or upgrade to a single Memos instance (non-destructive for local notes).
+Future<void> showConnectMemosDialog(
   BuildContext context,
-  WidgetRef ref,
-) async {
+  WidgetRef ref, {
+  Workspace? existing,
+}) async {
   await showDialog<void>(
     context: context,
     useRootNavigator: true,
-    builder: (ctx) => const _CreateWorkspaceDialog(),
+    builder: (ctx) => _ConnectMemosDialog(existing: existing),
   );
 }
 
-class _CreateWorkspaceDialog extends ConsumerStatefulWidget {
-  const _CreateWorkspaceDialog();
-
-  @override
-  ConsumerState<_CreateWorkspaceDialog> createState() =>
-      _CreateWorkspaceDialogState();
+/// @Deprecated — use [showConnectMemosDialog]
+@Deprecated('Use showConnectMemosDialog')
+Future<void> showCreateWorkspaceDialog(
+  BuildContext context,
+  WidgetRef ref,
+) {
+  return showConnectMemosDialog(context, ref);
 }
 
-class _CreateWorkspaceDialogState
-    extends ConsumerState<_CreateWorkspaceDialog> {
-  final _name = TextEditingController(text: 'My Memos');
+class _ConnectMemosDialog extends ConsumerStatefulWidget {
+  const _ConnectMemosDialog({this.existing});
+
+  final Workspace? existing;
+
+  @override
+  ConsumerState<_ConnectMemosDialog> createState() =>
+      _ConnectMemosDialogState();
+}
+
+class _ConnectMemosDialogState extends ConsumerState<_ConnectMemosDialog> {
   final _url = TextEditingController();
-  var _type = WorkspaceType.memos;
   var _insecure = false;
   var _busy = false;
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    final existing = widget.existing;
+    if (existing?.serverBaseUrl != null) {
+      _url.text = existing!.serverBaseUrl!;
+      _insecure = existing.allowInsecureTls;
+    }
+  }
+
+  @override
   void dispose() {
-    _name.dispose();
     _url.dispose();
     super.dispose();
   }
@@ -46,28 +65,43 @@ class _CreateWorkspaceDialogState
       _error = null;
     });
     try {
+      final url = _url.text.trim();
+      if (url.isEmpty || !url.startsWith('http')) {
+        throw const ValidationFailure('请输入有效的服务器地址（https://…）');
+      }
       final repo = ref.read(workspaceRepositoryProvider);
+      final existing = widget.existing;
       final Workspace ws;
-      if (_type == WorkspaceType.local) {
-        ws = await repo.createLocal(name: _name.text);
-      } else {
-        final url = _url.text.trim();
-        if (url.isEmpty || !url.startsWith('http')) {
-          throw const ValidationFailure('请输入有效的服务器地址（https://…）');
-        }
+      if (existing == null) {
+        final host = Uri.tryParse(url)?.host ?? 'Memos';
         ws = await repo.createMemos(
-          name: _name.text,
+          name: host,
+          serverBaseUrl: url,
+          allowInsecureTls: _insecure,
+        );
+        await ref.read(activeWorkspaceIdProvider.notifier).select(ws.localId);
+      } else if (existing.isLocal) {
+        ws = await repo.bindMemosServer(
+          localId: existing.localId,
+          serverBaseUrl: url,
+          allowInsecureTls: _insecure,
+        );
+        await ref
+            .read(memoRepositoryProvider)
+            .prepareLocalMemosForCloudPush(ws.localId);
+        await ref.read(activeWorkspaceIdProvider.notifier).select(ws.localId);
+      } else {
+        ws = await repo.bindMemosServer(
+          localId: existing.localId,
           serverBaseUrl: url,
           allowInsecureTls: _insecure,
         );
       }
-      await ref.read(activeWorkspaceIdProvider.notifier).select(ws.localId);
+
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
-      if (_type == WorkspaceType.memos) {
-        if (!mounted) return;
-        await showLoginDialog(context, ref, ws);
-      }
+      if (!mounted) return;
+      await showLoginDialog(context, ref, ws);
     } catch (e) {
       final msg = e is AppFailure ? e.message : e.toString();
       setState(() => _error = msg);
@@ -83,50 +117,40 @@ class _CreateWorkspaceDialogState
 
   @override
   Widget build(BuildContext context) {
+    final isUpgrade = widget.existing?.isLocal == true;
     return AlertDialog(
-      title: const Text('新建工作区'),
+      title: Text(isUpgrade ? '连接 Memos 云端' : '连接 Memos'),
       content: SizedBox(
         width: 420,
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (isUpgrade)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  '将把当前本地笔记绑定到服务器，不会清空本机数据。登录后会尝试首次同步。',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
             TextField(
-              controller: _name,
-              decoration: const InputDecoration(labelText: '名称'),
-            ),
-            const SizedBox(height: 12),
-            SegmentedButton<WorkspaceType>(
-              segments: const [
-                ButtonSegment(
-                  value: WorkspaceType.memos,
-                  label: Text('Memos 云端'),
-                  icon: Icon(Icons.cloud_outlined),
-                ),
-                ButtonSegment(
-                  value: WorkspaceType.local,
-                  label: Text('仅本地'),
-                  icon: Icon(Icons.folder_outlined),
-                ),
-              ],
-              selected: {_type},
-              onSelectionChanged: (s) => setState(() => _type = s.first),
-            ),
-            if (_type == WorkspaceType.memos) ...[
-              const SizedBox(height: 12),
-              TextField(
-                controller: _url,
-                decoration: const InputDecoration(
-                  labelText: '服务器 URL',
-                  hintText: 'https://memos.example.com',
-                ),
+              controller: _url,
+              decoration: const InputDecoration(
+                labelText: '服务器 URL',
+                hintText: 'https://memos.example.com',
               ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('允许不安全 TLS'),
-                value: _insecure,
-                onChanged: (v) => setState(() => _insecure = v),
-              ),
-            ],
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              onSubmitted: (_) => _submit(),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('允许不安全 TLS'),
+              subtitle: const Text('局域网自签名证书'),
+              value: _insecure,
+              onChanged: (v) => setState(() => _insecure = v),
+            ),
             if (_error != null) ...[
               const SizedBox(height: 8),
               Text(
@@ -152,7 +176,7 @@ class _CreateWorkspaceDialogState
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('创建'),
+              : Text(isUpgrade ? '绑定并登录' : '连接并登录'),
         ),
       ],
     );

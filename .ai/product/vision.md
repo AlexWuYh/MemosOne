@@ -46,14 +46,14 @@ Upstream: [https://github.com/usememos/memos](https://github.com/usememos/memos)
 2. **All product data lives locally** — memos, tags index, attachments metadata, settings, history.
 3. **All network ops are retryable** — failure must not corrupt local state.
 4. **Server is a sync peer**, not the sole source of truth.
-5. **Youthful / design-forward** — not a traditional beige notebook clone; distinctive “Studio Pop” visual language while staying a Memos client.
+5. **Calm workspace UI** — AppFlowy-inspired neutrals and restrained accent; Memos bird identity; not multi-workspace chrome.
 
 ## V1 success criteria (MVP)
 
 A user can:
 
-1. Create a **Local Workspace** and fully CRUD memos offline (Markdown).
-2. Create a **Memos Workspace**, sign in to a self-hosted instance, and complete **first full sync**.
+1. **Connect one Memos instance** (or start local-only, then **upgrade without wiping notes**), sign in, and complete **first full sync**.
+2. Fully CRUD memos offline (Markdown) against the local cache.
 3. Create / edit / delete / pin / archive memos **while offline**; changes sync when online (push + pull, LWW conflicts).
 4. Search memos via **FTS** (local).
 5. See clear **sync status** (idle / syncing / error / offline).
@@ -84,10 +84,11 @@ V1 must show:
 
 ## Brand / UX direction
 
-- Keep **Memos-adjacent** identity (simple, rounded, calm)
-- Light / Dark / System themes + accent color
-- Desktop: 3-pane (Workspace | List | Detail)
+- Keep **Memos-adjacent** identity (bird mark, simple, rounded, calm)
+- Light / Dark / System themes + accent color (default calm workspace blue)
+- Desktop: **icon rail | content** (list + detail / feed / calendar) — **no multi-workspace rail**
 - Mobile: list → detail navigation
+- Fonts: prefer offline-safe (no runtime font CDN requirement)
 
 ## Metrics (engineering NFRs)
 

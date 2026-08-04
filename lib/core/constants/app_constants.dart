@@ -1,6 +1,8 @@
 abstract final class AppConstants {
   static const String appName = 'Memos One';
   static const String appTagline = 'One Client. Every Device. Your Memos.';
+  static const String appAbout =
+      'Offline First 客户端 · 单云端连接 · 本地优先同步';
   static const int localDbSchemaVersion = 1;
   static const int historyLimitPerMemo = 20;
 

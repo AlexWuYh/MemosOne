@@ -291,7 +291,7 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
             children: [
               if (widget.showBack)
                 IconButton(
-                  icon: const Icon(Icons.arrow_back_rounded),
+                  icon: Icon(Icons.arrow_back_rounded),
                   onPressed: () =>
                       ref.read(selectedMemoIdProvider.notifier).state = null,
                 ),
@@ -556,19 +556,19 @@ class _PublicLinkBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppTheme.accentSoft.withValues(alpha: 0.65),
+      color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.65),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
         child: Row(
           children: [
-            const Icon(Icons.link, size: 16, color: AppTheme.accent),
+            Icon(Icons.link, size: 16, color: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 8),
-            const Text(
+            Text(
               '公开链接',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
-                color: AppTheme.accent,
+                color: Theme.of(context).colorScheme.primary,
               ),
             ),
             const SizedBox(width: 8),
@@ -584,7 +584,7 @@ class _PublicLinkBar extends StatelessWidget {
             ),
             IconButton(
               tooltip: '复制公开链接',
-              icon: const Icon(Icons.copy, size: 16, color: AppTheme.accent),
+              icon: Icon(Icons.copy, size: 16, color: Theme.of(context).colorScheme.primary),
               onPressed: () async {
                 await Clipboard.setData(ClipboardData(text: url));
                 if (context.mounted) {
@@ -596,7 +596,7 @@ class _PublicLinkBar extends StatelessWidget {
             ),
             IconButton(
               tooltip: '浏览器打开',
-              icon: const Icon(Icons.open_in_new, size: 16, color: AppTheme.accent),
+              icon: Icon(Icons.open_in_new, size: 16, color: Theme.of(context).colorScheme.primary),
               onPressed: () async {
                 final uri = Uri.tryParse(url);
                 if (uri != null) {
