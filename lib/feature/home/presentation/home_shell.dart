@@ -23,9 +23,10 @@ class HomeShell extends ConsumerWidget {
   Future<void> _newMemo(WidgetRef ref) async {
     final ws = ref.read(activeWorkspaceProvider);
     if (ws == null) return;
+    final visibility = ref.read(defaultVisibilityProvider);
     final memo = await ref.read(memoRepositoryProvider).create(
           ws.localId,
-          const NewMemo(content: ''),
+          NewMemo(content: '', visibility: visibility),
         );
     ref.read(selectedMemoIdProvider.notifier).state = memo.localId;
     ref.read(appViewModeProvider.notifier).state = AppViewMode.notes;

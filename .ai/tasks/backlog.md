@@ -37,10 +37,15 @@
 | Tags filter | Yes | Chips in list + tag tap in detail |
 | Calendar / heatmap | Yes | |
 | Sync status + force sync | Yes | Force drain + orphan requeue |
+| Tag filter (searchable) | Yes | Separate from status pills |
+| Default memo visibility | Yes | Settings → 笔记偏好 |
+| Double-click to edit | Yes | Settings preference |
+| Account profile (read) | Yes | After login; edit password via web |
+| Access token manage | Partial | Open server settings; client uses token login |
 | Attachments on Memos workspace | Partial | Local-only; remote upload deferred |
 | Comments / reactions / relations | No | Unsuitable for offline-first MVP; server social |
-| Shortcuts service | No | Deferred |
-| Instance admin / SSO | No | Not a client goal |
+| Webhook / Shortcuts | No | Deferred |
+| Instance admin / SSO / AI / Storage | No | Server Web admin only |
 
 ---
 

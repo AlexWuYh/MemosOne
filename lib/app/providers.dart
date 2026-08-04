@@ -222,6 +222,52 @@ class AccentColorController extends StateNotifier<Color> {
   }
 }
 
+/// Default visibility for new memos (web preference parity).
+final defaultVisibilityProvider =
+    StateNotifierProvider<DefaultVisibilityController, MemoVisibility>((ref) {
+  return DefaultVisibilityController(ref.watch(preferencesStoreProvider));
+});
+
+class DefaultVisibilityController extends StateNotifier<MemoVisibility> {
+  DefaultVisibilityController(this._prefs)
+      : super(_parseVisibility(_prefs.defaultMemoVisibility));
+
+  final PreferencesStore _prefs;
+
+  static MemoVisibility _parseVisibility(String raw) {
+    switch (raw.toLowerCase()) {
+      case 'public':
+        return MemoVisibility.public;
+      case 'protected':
+        return MemoVisibility.protected;
+      default:
+        return MemoVisibility.private;
+    }
+  }
+
+  Future<void> setVisibility(MemoVisibility v) async {
+    state = v;
+    await _prefs.setDefaultMemoVisibility(v.name);
+  }
+}
+
+/// Double-click preview to edit (web preference parity).
+final doubleClickToEditProvider =
+    StateNotifierProvider<DoubleClickToEditController, bool>((ref) {
+  return DoubleClickToEditController(ref.watch(preferencesStoreProvider));
+});
+
+class DoubleClickToEditController extends StateNotifier<bool> {
+  DoubleClickToEditController(this._prefs) : super(_prefs.doubleClickToEdit);
+
+  final PreferencesStore _prefs;
+
+  Future<void> setEnabled(bool v) async {
+    state = v;
+    await _prefs.setDoubleClickToEdit(v);
+  }
+}
+
 final workspacesProvider = StreamProvider<List<Workspace>>((ref) {
   return ref.watch(workspaceRepositoryProvider).watchAll();
 });

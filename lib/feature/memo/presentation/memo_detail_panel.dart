@@ -93,14 +93,14 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
       text: memo.content,
       selection: TextSelection.collapsed(offset: memo.content.length),
     );
-    // Preview only when opening another memo that already has content.
-    // Empty memos start in edit. Autosave never flips mode.
+    // Opening another memo always starts in preview (empty notes show CTA).
+    // New empty memos from ⌘N start in edit so writing is immediate.
     if (switched && mounted) {
-      setState(() => _preview = memo.content.trim().isNotEmpty);
+      final startEditing = memo.content.trim().isEmpty;
+      setState(() => _preview = !startEditing);
     }
   }
 
-  /// Persist content. Never auto-enters preview — user chooses 编辑/预览.
   Future<void> _saveById(
     String localId,
     String content, {
@@ -121,14 +121,12 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
 
   void _scheduleAutosave(Memo memo) {
     _autosaveTimer?.cancel();
-    // Stay in edit while typing; do not flip to preview on debounce.
-    if (_preview) setState(() => _preview = false);
     final localId = memo.localId;
     final expected = _boundContent;
     _autosaveTimer = Timer(
       const Duration(milliseconds: AppConstants.autosaveDebounceMs),
       () {
-        if (!mounted || _boundId != localId) return;
+        if (!mounted || _boundId != localId || _preview) return;
         final content = _controller.text;
         if (content == expected) return;
         unawaited(
@@ -142,13 +140,30 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
     );
   }
 
-  Future<void> _manualSave(Memo memo) async {
+  /// Explicit save: persist then return to preview.
+  Future<void> _saveAndPreview(Memo memo) async {
     _autosaveTimer?.cancel();
     await _saveById(
       memo.localId,
       _controller.text,
       expectedContent: _boundContent,
     );
+    if (mounted) setState(() => _preview = true);
+  }
+
+  void _enterEdit() {
+    if (!_preview) return;
+    setState(() => _preview = false);
+  }
+
+  Future<void> _cancelEdit(Memo memo) async {
+    _autosaveTimer?.cancel();
+    // Revert draft to last bound content and return to preview.
+    _controller.value = TextEditingValue(
+      text: _boundContent,
+      selection: TextSelection.collapsed(offset: _boundContent.length),
+    );
+    if (mounted) setState(() => _preview = true);
   }
 
   Future<void> _attach(Memo memo) async {
@@ -239,6 +254,7 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
     final memo = ref.watch(selectedMemoProvider);
     final workspace = ref.watch(activeWorkspaceProvider);
     final allowAttach = workspace == null || workspace.isLocal;
+    final doubleClickEdit = ref.watch(doubleClickToEditProvider);
     final scheme = Theme.of(context).colorScheme;
 
     if (memo == null) {
@@ -279,36 +295,40 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
                   onPressed: () =>
                       ref.read(selectedMemoIdProvider.notifier).state = null,
                 ),
-              SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(
-                    value: false,
-                    label: Text('编辑'),
-                    icon: Icon(Icons.edit_outlined, size: 16),
+              if (_preview)
+                FilledButton.tonalIcon(
+                  onPressed: _enterEdit,
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  label: const Text('编辑'),
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                   ),
-                  ButtonSegment(
-                    value: true,
-                    label: Text('预览'),
-                    icon: Icon(Icons.visibility_outlined, size: 16),
+                )
+              else ...[
+                FilledButton.icon(
+                  onPressed: _saving ? null : () => _saveAndPreview(memo),
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.check_rounded, size: 18),
+                  label: const Text('保存'),
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                   ),
-                ],
-                selected: {_preview},
-                onSelectionChanged: (s) async {
-                  if (s.first) {
-                    // Explicit user action: save then show preview.
-                    await _manualSave(memo);
-                    if (mounted) setState(() => _preview = true);
-                  } else {
-                    setState(() => _preview = false);
-                  }
-                },
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-              ),
-              const SizedBox(width: 8),
-              if (_saving)
+                const SizedBox(width: 6),
+                TextButton(
+                  onPressed: () => _cancelEdit(memo),
+                  child: const Text('取消'),
+                ),
+              ],
+              const SizedBox(width: 10),
+              if (_saving && _preview)
                 const SizedBox(
                   width: 16,
                   height: 16,
@@ -316,7 +336,11 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
                 )
               else
                 Text(
-                  memo.dirty ? '已保存 · 待同步' : '已保存',
+                  _preview
+                      ? (memo.dirty ? '已保存 · 待同步' : '预览')
+                      : (memo.dirty || _controller.text != _boundContent
+                          ? '编辑中 · 自动保存'
+                          : '编辑中'),
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -427,36 +451,40 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
         Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.5)),
         Expanded(
           child: _preview
-              ? Markdown(
-                  controller: _scrollController,
-                  data: _controller.text.isEmpty
-                      ? '*空笔记 — 切换到编辑开始书写*'
-                      : _controller.text,
-                  selectable: true,
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
-                      .copyWith(
-                    p: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          height: 1.55,
+              ? GestureDetector(
+                  onDoubleTap: doubleClickEdit ? _enterEdit : null,
+                  child: Markdown(
+                    controller: _scrollController,
+                    data: _controller.text.isEmpty
+                        ? '*空笔记 — 点击「编辑」开始书写*'
+                        : _controller.text,
+                    selectable: true,
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                    styleSheet:
+                        MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                      p: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            height: 1.55,
+                          ),
+                      h1: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                      h2: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                      blockquoteDecoration: BoxDecoration(
+                        color: scheme.surfaceContainerHighest
+                            .withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border(
+                          left: BorderSide(color: scheme.primary, width: 3),
                         ),
-                    h1: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                    h2: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                    blockquoteDecoration: BoxDecoration(
-                      color: scheme.surfaceContainerHighest
-                          .withValues(alpha: 0.45),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border(
-                        left: BorderSide(color: scheme.primary, width: 3),
                       ),
                     ),
                   ),
                 )
               : TextField(
                   controller: _controller,
+                  autofocus: true,
                   maxLines: null,
                   expands: true,
                   textAlignVertical: TextAlignVertical.top,
@@ -474,7 +502,7 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
                     border: InputBorder.none,
                     filled: false,
                     contentPadding: EdgeInsets.fromLTRB(20, 16, 20, 24),
-                    hintText: '用 Markdown 书写… 支持 #标签\n自动保存；点「预览」查看渲染效果',
+                    hintText: '用 Markdown 书写… 支持 #标签\n编辑中自动保存；点「保存」回到预览',
                   ),
                   onChanged: (_) => _scheduleAutosave(memo),
                 ),

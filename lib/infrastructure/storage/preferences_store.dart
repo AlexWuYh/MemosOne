@@ -19,6 +19,8 @@ class PreferencesStore {
   static const _syncOnReconnectKey = 'sync_on_reconnect';
   static const _periodicSyncKey = 'periodic_sync';
   static const _syncIntervalMinKey = 'sync_interval_minutes';
+  static const _defaultVisibilityKey = 'default_memo_visibility';
+  static const _doubleClickEditKey = 'double_click_to_edit';
 
   String? get activeWorkspaceId => _prefs.getString(_activeWorkspaceKey);
 
@@ -66,6 +68,19 @@ class PreferencesStore {
 
   Future<void> setSyncIntervalMinutes(int minutes) =>
       _prefs.setInt(_syncIntervalMinKey, minutes.clamp(1, 24 * 60));
+
+  /// Default visibility for newly created memos (PRIVATE / PROTECTED / PUBLIC).
+  String get defaultMemoVisibility =>
+      _prefs.getString(_defaultVisibilityKey) ?? 'private';
+
+  Future<void> setDefaultMemoVisibility(String v) =>
+      _prefs.setString(_defaultVisibilityKey, v);
+
+  /// Double-click preview content to enter edit mode (web parity).
+  bool get doubleClickToEdit => _prefs.getBool(_doubleClickEditKey) ?? true;
+
+  Future<void> setDoubleClickToEdit(bool v) =>
+      _prefs.setBool(_doubleClickEditKey, v);
 
   ThemeMode get themeMode {
     final raw = _prefs.getString(_themeModeKey);
