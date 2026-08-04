@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../../app/providers.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/memo_snippet_card.dart';
 import '../../../domain/entities/memo.dart';
 
 /// Focus node for Ctrl/Cmd+F from [HomeShell].
@@ -87,7 +88,6 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
     final filter = ref.watch(memoFilterProvider);
     final searchFocus = ref.watch(searchFocusNodeProvider);
     final tags = ref.watch(workspaceTagsProvider).valueOrNull ?? const [];
-    final scheme = Theme.of(context).colorScheme;
 
     if (search.isEmpty && _searchController.text.isNotEmpty) {
       _searchController.clear();
@@ -259,30 +259,10 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
             error: (e, _) => Center(child: Text('错误: $e')),
             data: (memos) {
               if (memos.isEmpty) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(28),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.edit_note_rounded,
-                          size: 48,
-                          color: scheme.outline,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          search.isEmpty ? '还没有笔记' : '没有匹配结果',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          search.isEmpty ? '点击右上角 + 快速记录' : '试试其他关键词',
-                          style: TextStyle(color: scheme.onSurfaceVariant),
-                        ),
-                      ],
-                    ),
-                  ),
+                return AppEmptyState(
+                  title: search.isEmpty ? '还没有笔记' : '没有匹配结果',
+                  subtitle:
+                      search.isEmpty ? '点击右上角「新建」快速记录' : '试试其他关键词或清除筛选',
                 );
               }
               return ListView.separated(
@@ -294,17 +274,18 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
                   final selected = memo.localId == selectedId;
                   return Material(
                     color: selected
-                        ? scheme.primaryContainer.withValues(alpha: 0.55)
-                        : scheme.surface,
+                        ? AppTheme.accentSoft.withValues(alpha: 0.65)
+                        : AppTheme.paper,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                       side: BorderSide(
                         color: selected
-                            ? scheme.primary.withValues(alpha: 0.35)
-                            : scheme.outlineVariant.withValues(alpha: 0.45),
+                            ? AppTheme.accent.withValues(alpha: 0.35)
+                            : AppTheme.line,
                       ),
                     ),
+                    clipBehavior: Clip.antiAlias,
                     child: InkWell(
                       borderRadius: BorderRadius.circular(14),
                       onTap: () {
@@ -312,71 +293,92 @@ class _MemoListPanelState extends ConsumerState<MemoListPanel> {
                             memo.localId;
                         widget.onSelect?.call(memo);
                       },
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      child: IntrinsicHeight(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Row(
-                              children: [
-                                if (memo.pinned)
-                                  Padding(
-                                    padding: const EdgeInsets.only(right: 6),
-                                    child: Icon(
-                                      Icons.push_pin_rounded,
-                                      size: 14,
-                                      color: scheme.primary,
-                                    ),
-                                  ),
-                                Expanded(
-                                  child: Text(
-                                    memo.snippet,
-                                    maxLines: widget.compact ? 2 : 3,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyLarge
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w500,
-                                          height: 1.35,
-                                        ),
-                                  ),
-                                ),
-                                if (memo.dirty)
-                                  Container(
-                                    margin: const EdgeInsets.only(left: 8),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 7,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: scheme.tertiaryContainer,
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Text(
-                                      '待同步',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: scheme.onTertiaryContainer,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                              ],
+                            // Selection accent bar
+                            AnimatedContainer(
+                              duration: AppTheme.motionFast,
+                              width: 3,
+                              color: selected
+                                  ? AppTheme.accent
+                                  : Colors.transparent,
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              DateFormat('yyyy/MM/dd HH:mm')
-                                      .format(memo.updatedAtLocal) +
-                                  (memo.tags.isEmpty
-                                      ? ''
-                                      : '  ·  ${memo.tags.map((t) => '#$t').join(' ')}'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelMedium
-                                  ?.copyWith(color: scheme.onSurfaceVariant),
+                            Expanded(
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(12, 12, 14, 12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        if (memo.pinned)
+                                          const Padding(
+                                            padding: EdgeInsets.only(right: 6),
+                                            child: Icon(
+                                              Icons.push_pin_rounded,
+                                              size: 14,
+                                              color: AppTheme.accent,
+                                            ),
+                                          ),
+                                        Expanded(
+                                          child: Text(
+                                            memo.snippet,
+                                            maxLines: widget.compact ? 2 : 3,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyLarge
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w500,
+                                                  height: 1.35,
+                                                  color: AppTheme.ink,
+                                                ),
+                                          ),
+                                        ),
+                                        if (memo.dirty)
+                                          Container(
+                                            margin:
+                                                const EdgeInsets.only(left: 8),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 7,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppTheme.warningSoft,
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                            ),
+                                            child: const Text(
+                                              '待同步',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: AppTheme.warning,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      DateFormat('yyyy/MM/dd HH:mm')
+                                              .format(memo.updatedAtLocal) +
+                                          (memo.tags.isEmpty
+                                              ? ''
+                                              : '  ·  ${memo.tags.map((t) => '#$t').join(' ')}'),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelMedium
+                                          ?.copyWith(color: AppTheme.inkMuted),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                           ],
                         ),

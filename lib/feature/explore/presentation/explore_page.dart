@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app/providers.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/memo_snippet_card.dart';
 import '../../../domain/entities/memo.dart';
 import '../../../infrastructure/network/memos/memos_api_client.dart';
 
@@ -30,30 +31,17 @@ final exploreSelectedProvider =
 class ExplorePage extends ConsumerWidget {
   const ExplorePage({super.key});
 
-  static String _preview(String content, {int maxChars = 160}) {
-    final flat = content
-        .replaceAll(RegExp(r'```[\s\S]*?```'), ' ')
-        .replaceAll(RegExp(r'[#>*_`\[\]!]'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-    if (flat.isEmpty) return '空笔记';
-    if (flat.length <= maxChars) return flat;
-    return '${flat.substring(0, maxChars).trimRight()}…';
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ws = ref.watch(activeWorkspaceProvider);
     final async = ref.watch(exploreRemoteProvider);
     final selected = ref.watch(exploreSelectedProvider);
-    final scheme = Theme.of(context).colorScheme;
 
     if (ws == null || !ws.isMemos) {
-      return Center(
-        child: Text(
-          '连接 Memos 云端工作区后可使用 Explore',
-          style: TextStyle(color: scheme.onSurfaceVariant),
-        ),
+      return const AppEmptyState(
+        title: '连接云端后使用 Explore',
+        subtitle: 'Explore 展示当前 Memos 实例上的公开笔记。',
+        icon: Icons.public_outlined,
       );
     }
 
@@ -104,11 +92,10 @@ class ExplorePage extends ConsumerWidget {
             ),
             data: (list) {
               if (list.isEmpty) {
-                return Center(
-                  child: Text(
-                    '暂无公开笔记',
-                    style: TextStyle(color: scheme.onSurfaceVariant),
-                  ),
+                return const AppEmptyState(
+                  title: '暂无公开笔记',
+                  subtitle: '把笔记可见性设为 PUBLIC 后会出现在这里。',
+                  icon: Icons.public_outlined,
                 );
               }
               final base = ws.serverBaseUrl ?? '';
@@ -119,91 +106,52 @@ class ExplorePage extends ConsumerWidget {
                 itemBuilder: (context, i) {
                   final m = list[i];
                   final url = memosPublicUrl(base, m.name);
-                  return Material(
-                    color: AppTheme.paperElevated,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      side: const BorderSide(color: AppTheme.line),
-                    ),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(14),
-                      onTap: () =>
-                          ref.read(exploreSelectedProvider.notifier).state = m,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.public,
-                                  size: 14,
-                                  color: scheme.primary,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  m.updateTime != null
-                                      ? DateFormat('yyyy/MM/dd HH:mm')
-                                          .format(m.updateTime!)
-                                      : m.name,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: scheme.onSurfaceVariant,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                const Spacer(),
-                                IconButton(
-                                  tooltip: '复制公开链接',
-                                  visualDensity: VisualDensity.compact,
-                                  icon: Icon(
-                                    Icons.link,
-                                    size: 16,
-                                    color: scheme.primary,
-                                  ),
-                                  onPressed: () async {
-                                    await Clipboard.setData(
-                                      ClipboardData(text: url),
-                                    );
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                          content: Text('已复制公开链接'),
-                                        ),
-                                      );
-                                    }
-                                  },
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              _preview(m.content),
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodyLarge
-                                  ?.copyWith(
-                                    height: 1.45,
-                                    color: AppTheme.ink,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              '查看全文 →',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: scheme.primary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
+                  return MemoSnippetCard(
+                    preview: MemoSnippetCard.flattenPreview(m.content),
+                    timestamp: m.updateTime,
+                    isPublic: true,
+                    onTap: () =>
+                        ref.read(exploreSelectedProvider.notifier).state = m,
+                    leadingMeta: Row(
+                      children: [
+                        const Icon(
+                          Icons.public,
+                          size: 14,
+                          color: AppTheme.accent,
                         ),
-                      ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            m.updateTime != null
+                                ? DateFormat('yyyy/MM/dd HH:mm')
+                                    .format(m.updateTime!)
+                                : m.name,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.inkMuted,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: '复制公开链接',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(
+                            Icons.link,
+                            size: 16,
+                            color: AppTheme.accent,
+                          ),
+                          onPressed: () async {
+                            await Clipboard.setData(ClipboardData(text: url));
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('已复制公开链接')),
+                              );
+                            }
+                          },
+                        ),
+                      ],
                     ),
                   );
                 },
@@ -311,18 +259,24 @@ class _ExploreDetail extends StatelessWidget {
         ),
         Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.5)),
         Expanded(
-          child: Markdown(
-            data: memo.content.isEmpty ? '*空笔记*' : memo.content,
-            selectable: true,
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-            styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-              p: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.55),
-              h1: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-              h2: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+          child: ReadingWidth(
+            child: Markdown(
+              data: memo.content.isEmpty ? '*空笔记*' : memo.content,
+              selectable: true,
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              styleSheet:
+                  MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                p: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      height: 1.55,
+                      fontSize: 15.5,
+                    ),
+                h1: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                h2: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
             ),
           ),
         ),

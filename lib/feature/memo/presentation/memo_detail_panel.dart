@@ -450,62 +450,69 @@ class _MemoDetailPanelState extends ConsumerState<MemoDetailPanel> {
         if (publicUrl != null) _PublicLinkBar(url: publicUrl),
         Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.5)),
         Expanded(
-          child: _preview
-              ? GestureDetector(
-                  onDoubleTap: doubleClickEdit ? _enterEdit : null,
-                  child: Markdown(
-                    controller: _scrollController,
-                    data: _controller.text.isEmpty
-                        ? '*空笔记 — 点击「编辑」开始书写*'
-                        : _controller.text,
-                    selectable: true,
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-                    styleSheet:
-                        MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-                      p: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            height: 1.55,
+          child: ReadingWidth(
+            child: _preview
+                ? GestureDetector(
+                    onDoubleTap: doubleClickEdit ? _enterEdit : null,
+                    child: Markdown(
+                      controller: _scrollController,
+                      data: _controller.text.isEmpty
+                          ? '*空笔记 — 点击「编辑」开始书写*'
+                          : _controller.text,
+                      selectable: true,
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                      styleSheet: MarkdownStyleSheet.fromTheme(
+                        Theme.of(context),
+                      ).copyWith(
+                        p: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              height: 1.55,
+                              fontSize: 15.5,
+                            ),
+                        h1: Theme.of(context)
+                            .textTheme
+                            .headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                        h2: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                        blockquoteDecoration: BoxDecoration(
+                          color: scheme.surfaceContainerHighest
+                              .withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border(
+                            left: BorderSide(color: scheme.primary, width: 3),
                           ),
-                      h1: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                      h2: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                      blockquoteDecoration: BoxDecoration(
-                        color: scheme.surfaceContainerHighest
-                            .withValues(alpha: 0.45),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border(
-                          left: BorderSide(color: scheme.primary, width: 3),
                         ),
                       ),
                     ),
+                  )
+                : TextField(
+                    controller: _controller,
+                    autofocus: true,
+                    maxLines: null,
+                    expands: true,
+                    textAlignVertical: TextAlignVertical.top,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          height: 1.55,
+                          fontFamily: 'Menlo',
+                          fontFamilyFallback: const [
+                            'Monaco',
+                            'Consolas',
+                            'monospace',
+                          ],
+                          fontSize: 14.5,
+                        ),
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      filled: false,
+                      contentPadding: EdgeInsets.fromLTRB(20, 16, 20, 24),
+                      hintText:
+                          '用 Markdown 书写… 支持 #标签\n编辑中自动保存；点「保存」回到预览',
+                    ),
+                    onChanged: (_) => _scheduleAutosave(memo),
                   ),
-                )
-              : TextField(
-                  controller: _controller,
-                  autofocus: true,
-                  maxLines: null,
-                  expands: true,
-                  textAlignVertical: TextAlignVertical.top,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        height: 1.55,
-                        fontFamily: 'Menlo',
-                        fontFamilyFallback: const [
-                          'Monaco',
-                          'Consolas',
-                          'monospace',
-                        ],
-                        fontSize: 14.5,
-                      ),
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    filled: false,
-                    contentPadding: EdgeInsets.fromLTRB(20, 16, 20, 24),
-                    hintText: '用 Markdown 书写… 支持 #标签\n编辑中自动保存；点「保存」回到预览',
-                  ),
-                  onChanged: (_) => _scheduleAutosave(memo),
-                ),
+          ),
         ),
         if (memo.tags.isNotEmpty)
           Padding(

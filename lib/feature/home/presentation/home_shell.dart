@@ -332,14 +332,16 @@ class _RailItemState extends State<_RailItem> {
             color: selected
                 ? AppTheme.accentSoft
                 : _hover
-                    ? AppTheme.line.withValues(alpha: 0.45)
+                    ? AppTheme.surfaceHover
                     : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
               onTap: widget.onTap,
-              child: SizedBox(
+              child: AnimatedContainer(
+                duration: AppTheme.motionFast,
                 height: 44,
+                alignment: Alignment.center,
                 child: Icon(
                   selected ? widget.selectedIcon : widget.icon,
                   size: 22,
@@ -389,9 +391,9 @@ class _TopBar extends StatelessWidget {
     };
 
     return Container(
-      height: 56,
+      height: 52,
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      color: AppTheme.paper.withValues(alpha: 0.95),
+      color: AppTheme.paper,
       child: Row(
         children: [
           Text(
@@ -457,21 +459,71 @@ class _SoftSync extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = snapshot ?? const SyncStatusSnapshot.idle();
-    final (icon, label) = switch (s.state) {
-      GlobalSyncState.syncing => (Icons.sync, '同步中'),
-      GlobalSyncState.offline => (Icons.cloud_off_outlined, '离线'),
-      GlobalSyncState.authRequired => (Icons.lock_outline, '需登录'),
-      GlobalSyncState.error => (Icons.error_outline, '异常'),
-      GlobalSyncState.idle => (
-          Icons.cloud_done_outlined,
-          s.pendingCount > 0 ? '${s.pendingCount} 待同步' : '已同步',
+    final (IconData icon, String label, Color fg, Color bg) = switch (s.state) {
+      GlobalSyncState.syncing => (
+          Icons.sync,
+          '同步中',
+          AppTheme.accent,
+          AppTheme.accentSoft,
         ),
+      GlobalSyncState.offline => (
+          Icons.cloud_off_outlined,
+          '离线可编辑',
+          AppTheme.inkMuted,
+          AppTheme.surfaceMuted,
+        ),
+      GlobalSyncState.authRequired => (
+          Icons.lock_outline,
+          '需要登录',
+          AppTheme.danger,
+          AppTheme.dangerSoft,
+        ),
+      GlobalSyncState.error => (
+          Icons.error_outline,
+          s.deadCount > 0 ? '${s.deadCount} 失败' : '同步异常',
+          AppTheme.danger,
+          AppTheme.dangerSoft,
+        ),
+      GlobalSyncState.idle => s.pendingCount > 0
+          ? (
+              Icons.cloud_queue_outlined,
+              '${s.pendingCount} 待同步',
+              AppTheme.warning,
+              AppTheme.warningSoft,
+            )
+          : (
+              Icons.cloud_done_outlined,
+              '已同步',
+              AppTheme.accent,
+              AppTheme.accentSoft,
+            ),
     };
-    return TextButton.icon(
-      onPressed: onTap,
-      icon: Icon(icon, size: 18),
-      label: Text(label),
-      style: TextButton.styleFrom(foregroundColor: AppTheme.inkMuted),
+
+    return Material(
+      color: bg,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: fg),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: fg,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
